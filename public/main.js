@@ -1281,39 +1281,41 @@ function handleChallengeAnswer(selectedIndex) {
  * 三題結束後，依答對題數恢復血量，並保留升級畫面、強化攻擊力
  */
 function finishMathChallenge() {
-  // 隱藏題目畫面
+  // 0. 隱藏題目畫面
   document.getElementById('questionScreen').classList.add('hidden');
 
-  // 1. 計算回血比例
-  let restorePercent = 0;
+  // 1. 每過一關，增加生命上限 10 點
+  const healthBoost = 10;
+  gameState.maxHealth += healthBoost;
+  // （若想直接補滿新的上限，可加：gameState.health = gameState.maxHealth;）
+
+  // 2. 計算本次答對題數的回血比例
   const c = gameState.challengeCorrectCount;
+  let restorePercent = 0;
   if (c === 1)      restorePercent = 0.3;
   else if (c === 2) restorePercent = 0.6;
   else if (c === 3) restorePercent = 1;
 
-  // 2. 真正恢復血量（答對≥1題才生效）
+  // 3. 按照新上限依比例回血
   if (restorePercent > 0) {
     const gain = Math.floor(gameState.maxHealth * restorePercent);
     gameState.health = Math.min(gameState.maxHealth, gameState.health + gain);
   }
 
-  // 3. 更新狀態列顯示（血量、分數等）
-  updateStatusDisplay(gameState);
-
-  // 4. 強化戰機攻擊力（每次升級 +5，數值可自行調整）
+  // 4. 強化戰機攻擊力（每次升級 +5）
   const attackBoost = 5;
   gameState.attack += attackBoost;
 
-  // 5. 升級關卡
+  // 5. 等級＋1，並更新下一關的過關目標分數
   gameState.level += 1;
-
-  // 6. 更新下一關目標分數
   gameState.levelGoal = calculateLevelGoal(gameState.level);
 
-  // 7. 顯示『升級畫面』，畫面上會呈現新的 gameState.attack、gameState.level、gameState.maxHealth
+  // 6. 更新狀態列（血量／上限／攻擊／等級／分數等）
+  updateStatusDisplay(gameState);
+
+  // 7. 顯示升級畫面（裡面會呈現新的 maxHealth、attack、level）
   showUpgradeScreen();
 }
-
       
       // 遊戲結束
       function gameOver() {
