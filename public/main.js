@@ -5,7 +5,7 @@ const API_BASE = '';
 // 匯入 UI 與遊戲核心模組
 import { updateStatusDisplay } from './ui.js';    // 更新狀態列顯示
 import { createPlayer, updatePlayer } from './player.js'; // 玩家邏輯：創建 & 更新
-import { spawnEnemy, updateEnemies,dropPowerup } from './enemy.js';  // 敵人生成 & 更新
+import { spawnEnemy, updateEnemies, dropPowerup, BOSS_ENEMY_TYPE } from './enemy.js';  // 敵人生成 & 更新
 import { shoot, updateBullets } from './bullet.js';      // 射擊 & 子彈更新
 
 // 動態載入題庫
@@ -771,9 +771,20 @@ function handleKeyDown(e) {
       // 繪製敵人
       function drawEnemies() {
         for (const enemy of enemies) {
-          ctx.save(); // ← 最外層
-      
-          // ★ 特殊敵人 (type === 3)：星形
+          ctx.save();
+
+    // —— 新增：頭目（BOSS）用金色粗邊框標示 —— 
+    if (enemy.type === BOSS_ENEMY_TYPE) {
+      // 在外層 ctx.save() 之下，再開一次新的 save/restore
+      ctx.save();
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth   = 5;
+      ctx.strokeRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      ctx.restore();
+    }
+    else 
+
+      // ★ 特殊敵人 (type === 3)：星形
     if (enemy.type === 3) {
       // 星形中心
       const cx = enemy.x + enemy.width/2;
