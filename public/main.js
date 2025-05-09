@@ -49,6 +49,7 @@ const gameState = {
   shield: 0,       // 當前剩餘護盾值
   shieldMax: 0,    // 護盾最大值，用於顯示
   hasAnswered: false,        // 是否已經回答過本題
+  bossSpawned: false,    // ★ 新增：本關是否已經出過頭目
 };
 
 
@@ -520,6 +521,7 @@ document.getElementById('teacherLoginBtn')
           gameState.attack = 10;
           gameState.isPlaying = true;
           gameState.levelGoal = calculateLevelGoal(1);
+          gameState.bossSpawned = false; // ★ 重置
           gameState.correctAnswers = 0;
           gameState.totalQuestions = 0;
           gameState.totalScoreForLevel = 0;
@@ -773,16 +775,38 @@ function handleKeyDown(e) {
         for (const enemy of enemies) {
           ctx.save();
 
-    // —— 新增：頭目（BOSS）用金色粗邊框標示 —— 
-    if (enemy.type === BOSS_ENEMY_TYPE) {
-      // 在外層 ctx.save() 之下，再開一次新的 save/restore
-      ctx.save();
-      ctx.strokeStyle = '#FFD700';
-      ctx.lineWidth   = 5;
-      ctx.strokeRect(enemy.x, enemy.y, enemy.width, enemy.height);
-      ctx.restore();
-    }
-    else 
+  // —— 修改：頭目（BOSS）改成幽浮圓盤造型 —— 
+  if (enemy.type === BOSS_ENEMY_TYPE) {
+    // 圓盤底座
+    ctx.fillStyle = '#CCCCCC';
+    ctx.beginPath();
+    ctx.ellipse(
+      enemy.x + enemy.width / 2,
+      enemy.y + enemy.height * 0.6,
+      enemy.width / 2,
+      enemy.height / 6,
+      0,
+      0,
+      2 * Math.PI
+    );
+    ctx.fill();
+    // 飛碟圓頂
+    ctx.fillStyle = '#66CCFF';
+    ctx.beginPath();
+    ctx.ellipse(
+      enemy.x + enemy.width / 2,
+      enemy.y + enemy.height * 0.4,
+      enemy.width / 3,
+      enemy.height / 4,
+      0,
+      0,
+      2 * Math.PI
+    );
+    ctx.fill();
+    // 畫完直接跳過後面一般繪製
+    ctx.restore();  
+    continue;  
+  }
 
       // ★ 特殊敵人 (type === 3)：星形
     if (enemy.type === 3) {
@@ -1205,6 +1229,7 @@ function handleKeyDown(e) {
           // 更新關卡目標
           gameState.levelGoal = calculateLevelGoal(gameState.level);
           
+          gameState.bossSpawned = false;    // ★ 重置，下一關可以再出頭目
           // 更新顯示
           updateStatusDisplay(gameState);
           

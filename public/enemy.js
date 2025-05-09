@@ -82,10 +82,11 @@ export function enemyShoot(enemy, enemyBullets) {
     const enemyHeight = 40;
     const enemyY = -enemyHeight;
   
-      // ★ 如果是 5 的倍數關卡，且還沒出現過頭目，就先 spawnBoss
-  if (gameState.level % 5 === 0 && !enemies.some(e => e.type === BOSS_ENEMY_TYPE)) {
+   // ★ 如果是 5 的倍數關卡，且本關尚未 spawn 過頭目，就生出一次
+  if (gameState.level % 5 === 0 && !gameState.bossSpawned) {
     spawnBoss(canvas, gameState, enemies);
-    return;
+    gameState.bossSpawned = true;   // 標記：本關已經生過頭目
+    return;                          // 跳過產生一般小怪
   }
     
     // 先決定敵人種類
