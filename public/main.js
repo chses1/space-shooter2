@@ -1715,9 +1715,7 @@ async function renderEditQuestions() {
       fetchAndRender();
     }
 
-
-
-document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', () => {
   // 綁定編輯題庫
   document.getElementById('editQuestionsBtn')
     .addEventListener('click', renderEditQuestions);
