@@ -1,0 +1,11 @@
+# 忽略 macOS 產生檔
+.DS_Store
+
+# 忽略 node_modules
+node_modules/
+
+# 忽略環境變數檔
+.env
+
+# (可選) 忽略 package-lock.json，如果你不想一起 commit
+package-lock.json
