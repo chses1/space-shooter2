@@ -1304,7 +1304,13 @@ function finishMathChallenge() {
   const attackBoost = 5;
   gameState.attack += attackBoost;
 
-  // 5. 顯示『升級畫面』，畫面上會呈現新的 gameState.attack、gameState.level、gameState.maxHealth
+  // 5. 升級關卡
+  gameState.level += 1;
+
+  // 6. 更新下一關目標分數
+  gameState.levelGoal = calculateLevelGoal(gameState.level);
+
+  // 7. 顯示『升級畫面』，畫面上會呈現新的 gameState.attack、gameState.level、gameState.maxHealth
   showUpgradeScreen();
 }
 
