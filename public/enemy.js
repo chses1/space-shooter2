@@ -163,12 +163,6 @@ export function updateEnemies(enemies, deltaTime, canvas, enemyBullets, powerups
           }
         }
  
-        e.shootCooldown -= deltaTime;
-        if (e.shootCooldown <= 0) {
-            enemyShoot(e, enemyBullets);
-            e.shootCooldown = e.shootInterval;
-        }
-
         if (e.y > canvas.height) {
             enemies.splice(i, 1);
         }

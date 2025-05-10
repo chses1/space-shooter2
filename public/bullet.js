@@ -7,7 +7,7 @@ export function shoot(player, bullets, attackRadius) {
       width: bulletWidth,
       height: bulletHeight,
       speed: 10,
-      damage: 10,
+      damage: attackRadius,
       color: '#fff',
       // 新增子彈屬性 (例如，子彈大小與範圍相關)
       radius: attackRadius,

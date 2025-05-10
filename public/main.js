@@ -6,6 +6,9 @@ const API_BASE = '';
 import { updateStatusDisplay } from './ui.js';    // 更新狀態列顯示
 import { createPlayer, updatePlayer } from './player.js'; // 玩家邏輯：創建 & 更新
 import { spawnEnemy, updateEnemies, dropPowerup, BOSS_ENEMY_TYPE } from './enemy.js';  // 敵人生成 & 更新
+// 載入 boss 圖片資源
+const bossImg = new Image();
+bossImg.src = 'boss.png';  // 根據實際放置路徑調整
 import { shoot, updateBullets } from './bullet.js';      // 射擊 & 子彈更新
 
 // 動態載入題庫
@@ -292,6 +295,114 @@ function drawPowerups() {
   }
 }
 
+function checkCollisions() {
+  // 1) 玩家子彈 vs. 敵人
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      if (
+        b.x < e.x + e.width &&
+        b.x + b.width > e.x &&
+        b.y < e.y + e.height &&
+        b.y + b.height > e.y
+      ) {
+        e.health -= b.damage;
+        bullets.splice(i, 1);
+        if (e.health <= 0) {
+          if (e.dropPowerup) dropPowerup(e.x, e.y, powerups);
+          gameState.score += e.points;
+          gameState.totalScoreForLevel += e.points;
+          enemies.splice(j, 1);
+          updateStatusDisplay(gameState);
+        }
+        break;
+      }
+    }
+  }
+
+  // 2) 敵人子彈 vs. 玩家
+  for (let i = enemyBullets.length - 1; i >= 0; i--) {
+    const b = enemyBullets[i];
+    if (
+      b.x < player.x + player.width &&
+      b.x + b.width > player.x &&
+      b.y < player.y + player.height &&
+      b.y + b.height > player.y
+    ) {
+      const dmg = b.damage;
+      if (gameState.shield > 0) {
+        gameState.shield -= dmg;
+        if (gameState.shield < 0) {
+          gameState.health += gameState.shield;
+          gameState.shield = 0;
+        }
+      } else if (!player.invulnerable) {
+        gameState.health -= dmg;
+        player.invulnerable = true;
+        player.invulnerableTime = 1000;
+        document.getElementById('gameContainer').classList.add('damage-flash');
+        setTimeout(() => {
+          document.getElementById('gameContainer').classList.remove('damage-flash');
+        }, 300);
+      }
+      enemyBullets.splice(i, 1);
+      updateStatusDisplay(gameState);
+    }
+  }
+
+  // 3) 敵人 vs. 玩家（貼身撞）
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const enemy = enemies[i];
+    // AABB 碰撞檢測
+    if (
+      player.x < enemy.x + enemy.width &&
+      player.x + player.width > enemy.x &&
+      player.y < enemy.y + enemy.height &&
+      player.y + player.height > enemy.y
+    ) {
+      let hitProcessed = false;
+      const COLLIDE_DMG = 20;
+      // 玩家受撞
+      if (gameState.shield > 0) {
+        gameState.shield -= COLLIDE_DMG;
+        if (gameState.shield < 0) {
+          gameState.health += gameState.shield;
+          gameState.shield = 0;
+        }
+        hitProcessed = true;
+      } else if (!player.invulnerable) {
+        gameState.health -= COLLIDE_DMG;
+        player.invulnerable = true;
+        player.invulnerableTime = 1000;
+        document.getElementById('gameContainer').classList.add('damage-flash');
+        setTimeout(() => {
+          document.getElementById('gameContainer').classList.remove('damage-flash');
+        }, 300);
+        hitProcessed = true;
+      }
+      updateStatusDisplay(gameState);
+      if (!hitProcessed) continue;
+
+      // 敵人受撞：Boss 扣血 20、不秒殺；一般敵人直接移除
+      if (enemy.type === BOSS_ENEMY_TYPE) {
+        enemy.health -= COLLIDE_DMG;
+        if (enemy.health <= 0) {
+          if (enemy.dropPowerup) dropPowerup(enemy.x, enemy.y, powerups);
+          gameState.score += enemy.points;
+          enemies.splice(i, 1);
+          updateStatusDisplay(gameState);
+        }
+      } else {
+        if (enemy.dropPowerup) dropPowerup(enemy.x, enemy.y, powerups);
+        gameState.score += enemy.points;
+        enemies.splice(i, 1);
+        updateStatusDisplay(gameState);
+      }
+    }
+  }
+}
+
 
 function applyPowerupEffect(type) {
   switch (type) {
@@ -514,7 +625,7 @@ document.getElementById('teacherLoginBtn')
           }
           
           // 初始化遊戲狀態
-          gameState.level = 1;
+          gameState.level = 5;
           gameState.score = 0;
           gameState.health = 100;
           gameState.maxHealth = 100;
@@ -751,16 +862,29 @@ function handleKeyDown(e) {
       
           // 更新敵人子彈
       function updateEnemyBullets(deltaTime) {
-          for (let i = enemyBullets.length - 1; i >= 0; i--) {
-              const bullet = enemyBullets[i];
-              bullet.y += bullet.speed * (deltaTime / 16);
-              
-              // 如果子彈超出畫布底部，移除
-              if (bullet.y > canvas.height) {
-                  enemyBullets.splice(i, 1);
-              }
-          }
-      }
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+
+        // —— 頭目子彈走斜線：有 vx, vy 屬性 —— 
+        if (bullet.vx !== undefined && bullet.vy !== undefined) {
+            bullet.x += bullet.vx * (deltaTime / 16);
+            bullet.y += bullet.vy * (deltaTime / 16);
+        }
+        // —— 其他敵人子彈：直落 —— 
+        else {
+            bullet.y += bullet.speed * (deltaTime / 16);
+        }
+
+        // 超出畫布範圍就移除
+        if (
+          bullet.y > canvas.height ||
+          bullet.x + bullet.width < 0 ||
+          bullet.x > canvas.width
+        ) {
+            enemyBullets.splice(i, 1);
+        }
+    }     
+  }
       
       // 繪製敵人子彈
       function drawEnemyBullets() {
@@ -775,38 +899,27 @@ function handleKeyDown(e) {
         for (const enemy of enemies) {
           ctx.save();
 
-  // —— 修改：頭目（BOSS）改成幽浮圓盤造型 —— 
-  if (enemy.type === BOSS_ENEMY_TYPE) {
-    // 圓盤底座
-    ctx.fillStyle = '#CCCCCC';
-    ctx.beginPath();
-    ctx.ellipse(
-      enemy.x + enemy.width / 2,
-      enemy.y + enemy.height * 0.6,
-      enemy.width / 2,
-      enemy.height / 6,
-      0,
-      0,
-      2 * Math.PI
-    );
-    ctx.fill();
-    // 飛碟圓頂
-    ctx.fillStyle = '#66CCFF';
-    ctx.beginPath();
-    ctx.ellipse(
-      enemy.x + enemy.width / 2,
-      enemy.y + enemy.height * 0.4,
-      enemy.width / 3,
-      enemy.height / 4,
-      0,
-      0,
-      2 * Math.PI
-    );
-    ctx.fill();
-    // 畫完直接跳過後面一般繪製
-    ctx.restore();  
-    continue;  
-  }
+    if (enemy.type === BOSS_ENEMY_TYPE) {
+      // 1. 畫出 boss 圖檔
+      ctx.drawImage(bossImg, enemy.x, enemy.y, enemy.width, enemy.height);
+
+      // 2. 在 boss 上方畫血條
+      const barW = enemy.width;          // 血條寬度同 boss
+      const barH = 8;                    // 血條高度
+      const barX = enemy.x;              // 血條左上角 X
+      const barY = enemy.y - barH - 5;   // 血條 Y，距離 boss 圖頂 5px
+      const hpRatio = Math.max(0, enemy.health / enemy.maxHealth);
+
+      // 背景條（深灰）
+      ctx.fillStyle = '#444';
+      ctx.fillRect(barX, barY, barW, barH);
+      // 前景條（紅色），依血量長度縮放
+      ctx.fillStyle = '#e53e3e';
+      ctx.fillRect(barX, barY, barW * hpRatio, barH);
+
+      ctx.restore();
+      continue;  // 跳過後面其他敵人繪製
+    } 
 
       // ★ 特殊敵人 (type === 3)：星形
     if (enemy.type === 3) {
@@ -899,78 +1012,63 @@ function handleKeyDown(e) {
       
       // 使用特殊攻擊
       function useSpecialAttack() {
-          if (!gameState.specialAttackReady) return;
-          
-          // 創建特殊攻擊效果
-          const specialAttack = document.createElement('div');
-          specialAttack.className = 'special-attack';
-          specialAttack.style.left = `${player.x + player.width / 2}px`;
-          specialAttack.style.top = `${player.y + player.height / 2}px`;
-          document.getElementById('gameContainer').appendChild(specialAttack);
-          
-          // 對範圍內的敵人造成傷害
-          const attackRadius = gameState.specialAttackRadius;
-          const attackDamage = gameState.attack * 3; // 特殊攻擊傷害
-          
-          const playerCenterX = player.x + player.width / 2;
-          const playerCenterY = player.y + player.height / 2;
-          
-          // 檢查每個敵人是否在攻擊範圍內
-          for (let i = enemies.length - 1; i >= 0; i--) {
-              const enemy = enemies[i];
-              const enemyCenterX = enemy.x + enemy.width / 2;
-              const enemyCenterY = enemy.y + enemy.height / 2;
-              
-              // 計算敵人與玩家的距離
-              const distance = Math.sqrt(
-                  Math.pow(enemyCenterX - playerCenterX, 2) + 
-                  Math.pow(enemyCenterY - playerCenterY, 2)
-              );
-              
-              // 如果敵人在攻擊範圍內，造成傷害
-              if (distance <= attackRadius) {
-                  enemy.health -= attackDamage;
-                  
-                  // 如果敵人死亡，移除敵人並增加分數
-                  if (enemy.health <= 0) {
-                      gameState.score += enemy.points;
-                      gameState.totalScoreForLevel += enemy.points;
-                      enemies.splice(i, 1);
-                  }
-              }
-          }
-          
-          // 清除範圍內的敵人子彈
-          for (let i = enemyBullets.length - 1; i >= 0; i--) {
-              const bullet = enemyBullets[i];
-              const bulletCenterX = bullet.x + bullet.width / 2;
-              const bulletCenterY = bullet.y + bullet.height / 2;
-              
-              // 計算子彈與玩家的距離
-              const distance = Math.sqrt(
-                  Math.pow(bulletCenterX - playerCenterX, 2) + 
-                  Math.pow(bulletCenterY - playerCenterY, 2)
-              );
-              
-              // 如果子彈在攻擊範圍內，移除子彈
-              if (distance <= attackRadius) {
-                  enemyBullets.splice(i, 1);
-              }
-          }
-          
-          // 更新分數顯示
-          updateStatusDisplay(gameState);
-          
-          // 設置特殊攻擊冷卻
-          gameState.specialAttackReady = false;
-          gameState.specialAttackCooldown = gameState.specialAttackMaxCooldown;
-          updateSpecialAttackDisplay();
-          
-          // 移除特殊攻擊效果
-          setTimeout(() => {
-              specialAttack.remove();
-          }, 1000);
+  if (!gameState.specialAttackReady) return;
+
+  // ——— 特效（可選） ———
+  const specialEl = document.createElement('div');
+  specialEl.className = 'special-attack';
+  specialEl.style.left = `${player.x + player.width/2}px`;
+  specialEl.style.top  = `${player.y + player.height/2}px`;
+  document.getElementById('gameContainer').appendChild(specialEl);
+  setTimeout(() => specialEl.remove(), 1000);
+
+  // ——— 參數設定 ———
+  const attackRadius = gameState.specialAttackRadius;
+  const attackDamage = Math.max(
+    gameState.attack * 3,
+    (20 + (gameState.level - 1) * 10) + 1
+  );
+  const px = player.x + player.width/2;
+  const py = player.y + player.height/2;
+
+  // ——— (A) 處理一般敵人 —— 跳過頭目 —— 
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const enemy = enemies[i];
+    // ★ 完全跳過頭目
+    if (enemy.type === BOSS_ENEMY_TYPE) continue;
+
+    const cx = enemy.x + enemy.width/2;
+    const cy = enemy.y + enemy.height/2;
+    const dist = Math.hypot(cx - px, cy - py);
+    if (dist <= attackRadius) {
+      // 扣血並秒殺
+      enemy.health -= attackDamage;
+      if (enemy.health <= 0) {
+        gameState.score += enemy.points;
+        enemies.splice(i, 1);
       }
+    }
+  }
+
+  // ——— (B) 處理敵方子彈 —— 全部清除 —— 
+  for (let i = enemyBullets.length - 1; i >= 0; i--) {
+    const b = enemyBullets[i];
+    const bx = b.x + b.width/2;
+    const by = b.y + b.height/2;
+    if (Math.hypot(bx - px, by - py) <= attackRadius) {
+      enemyBullets.splice(i, 1);
+    }
+  }
+
+  // ——— (C) 設置冷卻並更新顯示 ———
+  gameState.specialAttackReady = false;
+  gameState.specialAttackCooldown = gameState.specialAttackMaxCooldown;
+  updateSpecialAttackDisplay();
+
+  // （若你有在外面單獨綁定 specialAttack()，改成這行）
+  window.specialAttack = useSpecialAttack;
+}
+      
       
       // 更新特殊攻擊冷卻
       function updateSpecialAttack(deltaTime) {
@@ -1001,110 +1099,7 @@ function handleKeyDown(e) {
       }
       
       // 檢查碰撞
-      function checkCollisions() {
-        // ----------------------------------------
-        // 1) 玩家子彈 vs. 敵人
-        // ----------------------------------------
-        for (let i = bullets.length - 1; i >= 0; i--) {
-          const b = bullets[i];
-          for (let j = enemies.length - 1; j >= 0; j--) {
-            const e = enemies[j];
-            if (
-              b.x <  e.x + e.width &&
-              b.x + b.width > e.x &&
-              b.y <  e.y + e.height &&
-              b.y + b.height > e.y
-            ) {
-              e.health -= b.damage;
-              bullets.splice(i, 1);
-              if (e.health <= 0) {
-                if (e.dropPowerup) dropPowerup(e.x, e.y, powerups);
-                gameState.score             += e.points;
-                gameState.totalScoreForLevel += e.points;
-                enemies.splice(j, 1);
-                updateStatusDisplay(gameState);
-              }
-              break;
-            }
-          }
-        }
-      
-        // ----------------------------------------
-        // 2) 敵人子彈 vs. 玩家
-        // ----------------------------------------
-        for (let i = enemyBullets.length - 1; i >= 0; i--) {
-          const b = enemyBullets[i];
-          if (
-            b.x <  player.x + player.width  &&
-            b.x + b.width > player.x        &&
-            b.y <  player.y + player.height &&
-            b.y + b.height > player.y
-          ) {
-            // 如果有護盾，先扣護盾
-            if (gameState.shield > 0) {
-              const dmg = b.damage;
-              gameState.shield -= dmg;
-              // 護盾扣到負值時，把剩下的傷害算回生命
-              if (gameState.shield < 0) {
-                gameState.health += gameState.shield; 
-                gameState.shield = 0;
-              }
-              enemyBullets.splice(i, 1);
-              updateStatusDisplay(gameState);
-            }
-            // 沒護盾才走常規受傷 + 無敵邏輯
-            else if (!player.invulnerable) {
-              gameState.health -= b.damage;
-              enemyBullets.splice(i, 1);
-              player.invulnerable    = true;
-              player.invulnerableTime = 1000;
-              // 閃爍特效
-              document.getElementById('gameContainer').classList.add('damage-flash');
-              setTimeout(() => {
-                document.getElementById('gameContainer').classList.remove('damage-flash');
-              }, 300);
-              updateStatusDisplay(gameState);
-            }
-          }
-        }
-      
-        // ----------------------------------------
-        // 3) 敵人 vs. 玩家（貼身撞）
-        // ----------------------------------------
-        for (let i = enemies.length - 1; i >= 0; i--) {
-          const e = enemies[i];
-          if (
-            player.x <  e.x + e.width &&
-            player.x + player.width > e.x &&
-            player.y <  e.y + e.height &&
-            player.y + player.height > e.y
-          ) {
-            // 碰撞傷害固定 20
-            const COLLIDE_DMG = 20;
-            if (gameState.shield > 0) {
-              gameState.shield -= COLLIDE_DMG;
-              if (gameState.shield < 0) {
-                gameState.health += gameState.shield;
-                gameState.shield = 0;
-              }
-              // 直接移除這隻敵人
-              enemies.splice(i, 1);
-              updateStatusDisplay(gameState);
-            }
-            else if (!player.invulnerable) {
-              gameState.health -= COLLIDE_DMG;
-              enemies.splice(i, 1);
-              player.invulnerable    = true;
-              player.invulnerableTime = 1000;
-              document.getElementById('gameContainer').classList.add('damage-flash');
-              setTimeout(() => {
-                document.getElementById('gameContainer').classList.remove('damage-flash');
-              }, 300);
-              updateStatusDisplay(gameState);
-            }
-          }
-        }
-      }
+      // (已刪除重複或舊的 checkCollisions 定義，僅保留最終的正確版本)
       
 
       // 關卡完成
