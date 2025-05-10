@@ -1913,6 +1913,14 @@ async function renderEditQuestions() {
     }
   });
 
+  // 綁定 CSV 匯出按鈕
+  const csvExportBtn = document.getElementById('csvExportBtn');
+  if (csvExportBtn) {
+    csvExportBtn.addEventListener('click', () => {
+      // 觸發下載匯出 CSV
+      window.location = `${API_BASE}/api/questions/export`;
+    });
+  }
   // 綁定 CSV 匯入按鈕
   const csvImportBtn = document.getElementById('csvImportBtn');
   if (csvImportBtn) {

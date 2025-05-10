@@ -8,6 +8,7 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
 const upload = multer({ dest: 'uploads/' });
+const { Parser } = require('json2csv');
 
 // 1. 建立 app 實例，並先掛中間件
 const app = express();
@@ -101,6 +102,30 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
       console.error('CSV 解析錯誤：', err);
       res.status(400).json({ message: 'CSV 解析失敗', detail: err.message });
     });
+});
+
+/**
+ * 匯出所有題庫為 CSV
+ */
+app.get('/api/questions/export', async (req, res) => {
+  try {
+    const questions = await Question.find().lean();
+    const data = questions.map(q => ({
+      _id:      q._id.toString(),
+      question: q.question,
+      options:  q.options.join(';'),
+      answer:   q.answer
+    }));
+    const fields = ['_id','question','options','answer'];
+    const parser = new Parser({ fields });
+    const csv    = parser.parse(data);
+    res.header('Content-Type', 'text/csv');
+    res.attachment('questions.csv');
+    res.send(csv);
+  } catch (err) {
+    console.error('匯出 CSV 失敗：', err);
+    res.status(500).json({ message: '匯出失敗', detail: err.message });
+  }
 });
 
 // 4. 排行榜 API
