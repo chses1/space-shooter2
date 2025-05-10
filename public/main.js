@@ -625,7 +625,7 @@ document.getElementById('teacherLoginBtn')
           }
           
           // 初始化遊戲狀態
-          gameState.level = 5;
+          gameState.level = 1;
           gameState.score = 0;
           gameState.health = 100;
           gameState.maxHealth = 100;
