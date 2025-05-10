@@ -600,6 +600,111 @@ document.getElementById('teacherLoginBtn')
                 gameState.isPlaying = false;
                 cancelAnimationFrame(gameAnimationId);
                 pauseBtn.textContent = '繼續';
+                // ◆ 建立說明視窗
+                const infoPopup = document.createElement('div');
+                infoPopup.id = 'powerupInfoPopup';
+                infoPopup.className = 'absolute inset-0 flex items-center justify-center bg-black/70 z-20';
+
+                const inner = document.createElement('div');
+                inner.className = 'bg-white text-black p-6 rounded-lg w-80';
+                inner.innerHTML = `
+                  <h2 class="text-xl font-bold mb-4 text-center">道具功能說明</h2>
+                  <ul class="list-none p-0 m-0">
+                    <li class="flex items-start mb-3">
+                      <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
+                        <canvas width="32" height="32" class="powerup-icon" data-type="0"></canvas>
+                      </div>
+                      <span class="text-sm leading-normal">範圍：增加特殊攻擊範圍，可重複疊加（最多5次）。</span>
+                    </li>
+                    <li class="flex items-start mb-3">
+                      <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
+                        <canvas width="32" height="32" class="powerup-icon" data-type="1"></canvas>
+                      </div>
+                      <span class="text-sm leading-normal">連發：縮短射擊間隔，可重複疊加（最多5次）。</span>
+                    </li>
+                    <li class="flex items-start mb-3">
+                      <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
+                        <canvas width="32" height="32" class="powerup-icon" data-type="2"></canvas>
+                      </div>
+                      <span class="text-sm leading-normal">補血：立即回復30點生命值。</span>
+                    </li>
+                    <li class="flex items-start mb-3">
+                      <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
+                        <canvas width="32" height="32" class="powerup-icon" data-type="3"></canvas>
+                      </div>
+                      <span class="text-sm leading-normal">護盾：獲得50點護盾，吸收傷害直到耗盡。</span>
+                    </li>
+                    <li class="flex items-start mb-3">
+                      <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
+                        <canvas width="32" height="32" class="powerup-icon" data-type="4"></canvas>
+                      </div>
+                      <span class="text-sm leading-normal">加速：永久提升飛機移動速度。</span>
+                    </li>
+                  </ul>
+                  <div class="text-center mt-4">
+                    <button id="resumePopupBtn" class="px-4 py-2 bg-blue-500 text-white rounded">繼續遊戲</button>
+                  </div>
+                `;
+                infoPopup.appendChild(inner);
+                document.getElementById('gameContainer').appendChild(infoPopup);
+
+                // ◆ 呼叫繪製函式，把 Canvas 畫出跟畫面上一樣的道具圖示
+                document.querySelectorAll('#powerupInfoPopup canvas.powerup-icon').forEach(canvasEl => {
+                  const ctx2 = canvasEl.getContext('2d');
+                  const s = canvasEl.width;
+                  const type = Number(canvasEl.dataset.type);
+                  ctx2.clearRect(0, 0, s, s);
+                  ctx2.save();
+                  ctx2.translate(s/2, s/2);
+
+                  if (type === 0) {
+                    ctx2.strokeStyle = '#f59e0b';
+                    ctx2.lineWidth = 3;
+                    ctx2.beginPath();
+                    ctx2.arc(0, 0, s/2 - 2, 0, Math.PI*2);
+                    ctx2.stroke();
+                  } else if (type === 1) {
+                    ctx2.fillStyle = '#06b6d4';
+                    const bw = s/6, bh = s/2;
+                    ctx2.fillRect(-bw - 2, -bh/2, bw, bh);
+                    ctx2.fillRect(-bw/2, -bh/2, bw, bh);
+                    ctx2.fillRect(bw + 2 - bw, -bh/2, bw, bh);
+                  } else if (type === 2) {
+                    ctx2.fillStyle = '#10b981';
+                    const l = s/2.5;
+                    ctx2.fillRect(-s/10, -l, s/5, 2*l);
+                    ctx2.fillRect(-l, -s/10, 2*l, s/5);
+                  } else if (type === 3) {
+                    ctx2.fillStyle = '#60a5fa';
+                    ctx2.beginPath();
+                    ctx2.moveTo(0, -s/2);
+                    ctx2.lineTo(s/2, -s/6);
+                    ctx2.lineTo(s/6, s/2);
+                    ctx2.lineTo(-s/6, s/2);
+                    ctx2.lineTo(-s/2, -s/6);
+                    ctx2.closePath();
+                    ctx2.fill();
+                  } else if (type === 4) {
+                    ctx2.fillStyle = '#facc15';
+                    ctx2.beginPath();
+                    ctx2.moveTo(0, -s/2);
+                    ctx2.lineTo(s/4, 0);
+                    ctx2.lineTo(s/12, 0);
+                    ctx2.lineTo(s/12, s/2);
+                    ctx2.lineTo(-s/12, s/2);
+                    ctx2.lineTo(-s/12, 0);
+                    ctx2.lineTo(-s/4, 0);
+                    ctx2.closePath();
+                    ctx2.fill();
+                  }
+
+                  ctx2.restore();
+                });
+                // ◆ 綁定說明視窗「繼續遊戲」按鈕
+                const resumePopupBtn = document.getElementById('resumePopupBtn');
+                resumePopupBtn.addEventListener('click', () => {
+                  pauseBtn.click();
+                });
               } else {
                 paused = false;
                 gameState.isPlaying = true;
@@ -611,6 +716,9 @@ document.getElementById('teacherLoginBtn')
                 const warnDiv = document.getElementById('inactivityWarning');
                 if (warnDiv) warnDiv.classList.add('hidden');
                 pauseBtn.textContent = '暫停';
+                // ◆ 移除說明視窗
+                const popup = document.getElementById('powerupInfoPopup');
+                if (popup) popup.remove();
               }
             });
 
