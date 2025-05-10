@@ -4,6 +4,10 @@ const express  = require('express');
 const mongoose = require('mongoose');
 const cors     = require('cors');
 const path     = require('path');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
+const upload = multer({ dest: 'uploads/' });
 
 // 1. 建立 app 實例，並先掛中間件
 const app = express();
@@ -55,6 +59,48 @@ app.delete('/api/questions/:id', async (req, res) => {
     console.error(err);
     res.status(500).json({ message: '伺服器錯誤' });
   }
+});
+
+/**
+ * CSV 批次匯入或更新題目
+ * 前端上傳檔案欄位名稱：file
+ * CSV 欄位：_id,question,options,answer
+ */
+app.post('/api/questions/import', upload.single('file'), async (req, res) => {
+  const rows = [];
+  fs.createReadStream(req.file.path)
+    .pipe(csv({ skipLines: 0, strict: true }))
+    .on('data', data => rows.push(data))
+    .on('end', async () => {
+      fs.unlinkSync(req.file.path);
+      try {
+        for (const row of rows) {
+          const opts = row.options.split(';').map(s => s.trim());
+          const ans  = parseInt(row.answer, 10);
+          if (row._id) {
+            await Question.findByIdAndUpdate(row._id, {
+              question: row.question,
+              options: opts,
+              answer: ans
+            });
+          } else {
+            await Question.create({
+              question: row.question,
+              options: opts,
+              answer: ans
+            });
+          }
+        }
+        res.json({ message: 'CSV 匯入完成', count: rows.length });
+      } catch (err) {
+        console.error('CSV 匯入失敗：', err);
+        res.status(500).json({ message: 'CSV 匯入失敗', detail: err.message });
+      }
+    })
+    .on('error', err => {
+      console.error('CSV 解析錯誤：', err);
+      res.status(400).json({ message: 'CSV 解析失敗', detail: err.message });
+    });
 });
 
 // 4. 排行榜 API

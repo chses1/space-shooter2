@@ -9,6 +9,7 @@
                viewport-fit=cover">
     <title>太空數學射擊遊戲</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
@@ -538,7 +539,10 @@
       <button id="clearLeaderboardBtn" class="btn">清除排行榜</button>
       <button id="adminPanelBackBtn" class="btn">返回主畫面</button>
     </div>
-    
+    <div class="mb-4">
+      <input type="file" id="csvFileInput" accept=".csv" class="btn mr-2">
+      <button id="csvImportBtn" class="btn">從 CSV 匯入</button>
+    </div>
     <div id="adminContent" class="w-full overflow-auto text-white"></div>
   </div>
 

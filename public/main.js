@@ -1912,4 +1912,42 @@ async function renderEditQuestions() {
       }
     }
   });
+
+  // 綁定 CSV 匯入按鈕
+  const csvImportBtn = document.getElementById('csvImportBtn');
+  if (csvImportBtn) {
+    csvImportBtn.addEventListener('click', () => {
+      const fileEl = document.getElementById('csvFileInput');
+      if (!fileEl.files.length) {
+        return alert('請先選擇 CSV 檔案');
+      }
+      const file = fileEl.files[0];
+      // 使用 Papa Parse 解析並驗證欄位
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: () => {
+          const form = new FormData();
+          form.append('file', file);
+          fetch(`${API_BASE}/api/questions/import`, {
+            method: 'POST',
+            body: form
+          })
+          .then(res => res.json())
+          .then(data => {
+            alert(`匯入完成：共 ${data.count} 題`);
+            renderAdminMenu();
+          })
+          .catch(err => {
+            console.error('CSV 匯入錯誤：', err);
+            alert('匯入失敗：' + err.message);
+          });
+        },
+        error: err => {
+          console.error('Papa Parse 解析錯誤：', err);
+          alert('CSV 解析失敗：' + err.message);
+        }
+      });
+    });
+  }
 });
