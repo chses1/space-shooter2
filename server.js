@@ -110,15 +110,24 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
 app.get('/api/questions/export', async (req, res) => {
   try {
     const questions = await Question.find().lean();
-    const data = questions.map(q => ({
-      _id:      q._id.toString(),
-      question: q.question,
-      options:  q.options.join(';'),
-      answer:   q.answer
-    }));
-    const fields = ['_id','question','options','answer'];
+    // 將選項拆成四個獨立欄位，方便編輯
+    const data = questions.map(q => {
+      const opts = q.options || [];
+      return {
+        _id:      q._id.toString(),
+        question: q.question,
+        option1:  opts[0] || '',
+        option2:  opts[1] || '',
+        option3:  opts[2] || '',
+        option4:  opts[3] || '',
+        answer:   q.answer
+      };
+    });
+    // 欄位順序：_id、題目、四個選項、答案
+    const fields = ['_id','question','option1','option2','option3','option4','answer'];
     const parser = new Parser({ fields });
     const csv    = parser.parse(data);
+
     res.header('Content-Type', 'text/csv');
     res.attachment('questions.csv');
     res.send(csv);
