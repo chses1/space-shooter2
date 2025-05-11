@@ -63,7 +63,7 @@ let player;                        // 玩家物件
 let enemies = [], bullets = [], enemyBullets = [], stars = [];
 let powerups = []; // 新增道具陣列
 let lastTime = 0, enemySpawnTimer = 0;
-const enemySpawnInterval = 1500;  // 每1.5秒生成一隻敵人
+const enemySpawnInterval = 1000;  // 每1秒生成一隻敵人
 let gameAnimationId;
 let currentQuestion = null;
 let timerInterval;
@@ -170,6 +170,8 @@ function gameLoop(timestamp) {
   // 定時生成敵人
   enemySpawnTimer += delta;
   if (enemySpawnTimer >= enemySpawnInterval) {
+    // 更新玩家中心 X 座標，讓突擊隊能鎖定目標
+    gameState.playerX = player.x + player.width / 2;
     spawnEnemy(canvas, gameState, enemies);
     enemySpawnTimer = 0;
   }

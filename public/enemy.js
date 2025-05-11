@@ -78,6 +78,14 @@ export function enemyShoot(enemy, enemyBullets) {
   }
   
   export function spawnEnemy(canvas, gameState, enemies) {
+    // 每關開始時初始化：記錄關卡啟動時間與初始化 lastAssaultTime
+    if (gameState.levelStartLevel !== gameState.level) {
+      gameState.levelStartLevel = gameState.level;
+      gameState.levelStartTime = Date.now();
+      // 每關開始時初始化 lastAssaultTime
+      gameState.lastAssaultTime = gameState.levelStartTime;
+    }
+
     const enemyWidth  = 40;
     const enemyHeight = 40;
     const enemyY = -enemyHeight;
@@ -110,11 +118,48 @@ export function enemyShoot(enemy, enemyBullets) {
     }
   
     // 按照既有邏輯計算其他屬性
-    const enemyHealth   = 20 + (gameState.level - 1) * 10;
-    const enemySpeed    = 2  + (gameState.level - 1) * 0.3;
+    const enemyHealth   = 20 + (gameState.level - 1) * 30;
+    const enemySpeed    = 2  + (gameState.level - 1) * 0.5;
     const enemyPoints   = 10 + (gameState.level - 1) * 5;
     const shootCooldown = Math.random() * 2000 + 1000;
-    const shootInterval = Math.random() * 2000 + 2000 - (gameState.level - 1) * 200;
+    const shootInterval = Math.random() * 1500 + 1500 - (gameState.level - 1) * 300;
+
+    // 每 30 秒觸發突擊隊群體生成：倒三角形隊形，共 6 隻，速度為一般敵人的兩倍
+    const now = Date.now();
+    if (now - gameState.lastAssaultTime >= 30000) {
+      gameState.lastAssaultTime = now;
+      // 增加隊員間隔
+      const spacingX = enemyWidth + 20;
+      const spacingY = enemyHeight + 20;
+      // 以玩家 X 座標對準
+      const centerX = gameState.playerX;
+      // 倒三角形：3, 2, 1 排列
+      [3, 2, 1].forEach((num, rowIndex) => {
+        const yPos = enemyY + rowIndex * spacingY;
+        for (let j = 0; j < num; j++) {
+          const xPos = centerX + (j - (num - 1) / 2) * spacingX;
+          enemies.push({
+            x: xPos,
+            y: yPos,
+            width: enemyWidth,
+            height: enemyHeight,
+            health: enemyHealth,
+            maxHealth: enemyHealth,
+            // 垂直快速落下，不做水平移動
+            speed: enemySpeed * 2,
+            horizontalSpeed: 0,
+            horizontalDirection: 0,
+            type: enemyType,
+            points: enemyPoints,
+            shootCooldown,
+            shootInterval,
+            dropPowerup: (enemyType === SPECIAL_ENEMY_TYPE),
+            assault: true,
+          });
+        }
+      });
+      return;
+    }
   
     enemies.push({
       x: enemyX,
@@ -128,9 +173,9 @@ export function enemyShoot(enemy, enemyBullets) {
       points: enemyPoints,
       shootCooldown,
       shootInterval,
-      // 特殊敵人不需要左右移動：
-      horizontalSpeed: 0,
-      horizontalDirection: 0,
+      // 特殊敵人水平移動設定
+      horizontalSpeed: 1 + (gameState.level - 1) * 0.2,
+      horizontalDirection: 1,
       dropPowerup: (enemyType === SPECIAL_ENEMY_TYPE),
     });
   }
@@ -139,6 +184,39 @@ export function enemyShoot(enemy, enemyBullets) {
 export function updateEnemies(enemies, deltaTime, canvas, enemyBullets, powerups) { // 增加 powerups 參數
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
+
+        // 星形特殊敵人：左右閃避+正常下移+射擊
+        if (e.type === SPECIAL_ENEMY_TYPE) {
+          // 隨機翻轉方向
+          if (Math.random() < 0.03) e.horizontalDirection *= -1;
+          // 水平閃避
+          e.x += e.horizontalSpeed * (deltaTime / 16) * e.horizontalDirection;
+          // 確保不超出邊界
+          if (e.x <= 0 || e.x + e.width >= canvas.width) {
+            e.horizontalDirection *= -1;
+          }
+          // 向下移動
+          e.y += e.speed * (deltaTime / 16);
+          // 普通射擊
+          e.shootCooldown -= deltaTime;
+          if (e.shootCooldown <= 0) {
+            enemyShoot(e, enemyBullets);
+            e.shootCooldown = e.shootInterval;
+          }
+          continue;
+        }
+
+        // 群體突擊隊成員：斜向落下並射擊
+        if (e.assault) {
+          // 只做快速垂直下降
+          e.y += e.speed * (deltaTime / 16);
+          e.shootCooldown -= deltaTime;
+          if (e.shootCooldown <= 0) {
+            enemyShoot(e, enemyBullets);
+            e.shootCooldown = e.shootInterval;
+          }
+          continue;
+        }
 
         if (e.type === BOSS_ENEMY_TYPE) {
           // 頭目：左右移動，不下降
