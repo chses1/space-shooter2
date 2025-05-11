@@ -1147,23 +1147,21 @@ function handleKeyDown(e) {
   const py = player.y + player.height/2;
 
   // ——— (A) 處理一般敵人 —— 跳過頭目 —— 
-  for (let i = enemies.length - 1; i >= 0; i--) {
-    const enemy = enemies[i];
-    // ★ 完全跳過頭目
-    if (enemy.type === BOSS_ENEMY_TYPE) continue;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
+      // ★ 跳過頭目，不對 BOSS 使用秒殺
+      if (enemy.type === BOSS_ENEMY_TYPE) continue;
 
-    const cx = enemy.x + enemy.width/2;
-    const cy = enemy.y + enemy.height/2;
-    const dist = Math.hypot(cx - px, cy - py);
-    if (dist <= attackRadius) {
-      // 扣血並秒殺
-      enemy.health -= attackDamage;
-      if (enemy.health <= 0) {
+      const cx = enemy.x + enemy.width / 2;
+      const cy = enemy.y + enemy.height / 2;
+      const dist = Math.hypot(cx - px, cy - py);
+      if (dist <= attackRadius) {
+        // 直接秒殺一般敵人，並掉落道具（若有設定）
+        if (enemy.dropPowerup) dropPowerup(enemy.x, enemy.y, powerups);
         gameState.score += enemy.points;
         enemies.splice(i, 1);
       }
     }
-  }
 
   // ——— (B) 處理敵方子彈 —— 全部清除 —— 
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
