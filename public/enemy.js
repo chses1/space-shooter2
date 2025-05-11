@@ -128,6 +128,8 @@ export function enemyShoot(enemy, enemyBullets) {
     const now = Date.now();
     if (now - gameState.lastAssaultTime >= 30000) {
       gameState.lastAssaultTime = now;
+      // 突擊隊只用普通敵人 (0,1,2)
+      const assaultType = Math.floor(Math.random() * 3);
       // 增加隊員間隔
       const spacingX = enemyWidth + 40;
       const spacingY = enemyHeight + 40;
@@ -139,23 +141,22 @@ export function enemyShoot(enemy, enemyBullets) {
         for (let j = 0; j < num; j++) {
           const xPos = centerX + (j - (num - 1) / 2) * spacingX;
           enemies.push({
-            x: xPos,
-            y: yPos,
-            width: enemyWidth,
-            height: enemyHeight,
-            health: enemyHealth,
-            maxHealth: enemyHealth,
-            // 垂直快速落下，不做水平移動
-            speed: enemySpeed * 2,
-            horizontalSpeed: 0,
-            horizontalDirection: 0,
-            type: enemyType,
-            points: enemyPoints,
-            shootCooldown,
-            shootInterval,
-            dropPowerup: (enemyType === SPECIAL_ENEMY_TYPE),
-            assault: true,
-          });
+          x: xPos,
+          y: yPos,
+          width: enemyWidth,
+          height: enemyHeight,
+          health: enemyHealth,
+          maxHealth: enemyHealth,
+          speed: enemySpeed * 2,
+          horizontalSpeed: 0,
+          horizontalDirection: 0,
+          type: assaultType,
+          points: enemyPoints,
+          shootCooldown,
+          shootInterval,
+          dropPowerup: false,
+          assault: true,
+        });  
         }
       });
       return;
