@@ -408,19 +408,20 @@ function checkCollisions() {
 
 function applyPowerupEffect(type) {
   switch (type) {
-    case 0: // 特殊攻擊範圍加大：可重複，永久生效（最多疊加5次）
-      // 新增疊加次數限制
+    case 0: // 特殊攻擊範圍加大：可重複，永久生效（最多疊加3次）
+      // 最多疊加3次
       if (!gameState.specialAttackStack) gameState.specialAttackStack = 0;
-      if (gameState.specialAttackStack < 5) {
+      if (gameState.specialAttackStack < 3) {
         gameState.specialAttackRadius += 50;
         gameState.specialAttackStack++;
         console.log('>> specialAttackRadius:', gameState.specialAttackRadius);
       }
       break;
 
-    case 1: // 連發加速：每次減少射擊間隔 100ms，永久生效（最多疊加5次）
+    case 1: // 連發加速：每次減少射擊間隔 100ms，永久生效（最多疊加3次）
+      // 最多疊加3次
       if (!gameState.shootSpeedupStack) gameState.shootSpeedupStack = 0;
-      if (gameState.shootSpeedupStack < 5) {
+      if (gameState.shootSpeedupStack < 3) {
         player.shootInterval = Math.max(50, player.shootInterval - 100);
         gameState.shootSpeedupStack++;
         console.log('>> shootInterval:', player.shootInterval);
@@ -609,20 +610,24 @@ document.getElementById('teacherLoginBtn')
 
                 const inner = document.createElement('div');
                 inner.className = 'bg-white text-black p-6 rounded-lg w-80';
+                // 讀取已獲得的道具疊加次數
+                const rangeCount = gameState.specialAttackStack || 0;
+                const shootCount = gameState.shootSpeedupStack || 0;
                 inner.innerHTML = `
+                  <div class="text-center mb-2 text-sm">你已獲得：範圍加大 ${rangeCount} 次，連發加速 ${shootCount} 次。</div>
                   <h2 class="text-xl font-bold mb-4 text-center">道具功能說明</h2>
                   <ul class="list-none p-0 m-0">
                     <li class="flex items-start mb-3">
                       <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
                         <canvas width="32" height="32" class="powerup-icon" data-type="0"></canvas>
                       </div>
-                      <span class="text-sm leading-normal">範圍：增加特殊攻擊範圍，可重複疊加（最多5次）。</span>
+                      <span class="text-sm leading-normal">範圍：增加特殊攻擊範圍，可重複疊加（最多3次）。</span>
                     </li>
                     <li class="flex items-start mb-3">
                       <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">
                         <canvas width="32" height="32" class="powerup-icon" data-type="1"></canvas>
                       </div>
-                      <span class="text-sm leading-normal">連發：縮短射擊間隔，可重複疊加（最多5次）。</span>
+                      <span class="text-sm leading-normal">連發：縮短射擊間隔，可重複疊加（最多3次）。</span>
                     </li>
                     <li class="flex items-start mb-3">
                       <div class="w-8 h-8 flex items-center justify-center flex-shrink-0 mr-3">

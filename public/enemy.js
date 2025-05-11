@@ -118,7 +118,7 @@ export function enemyShoot(enemy, enemyBullets) {
     }
   
     // 按照既有邏輯計算其他屬性
-    const enemyHealth   = 20 + (gameState.level - 1) * 20;
+    const enemyHealth   = 20 + (gameState.level - 1) * 30;
     const enemySpeed    = 2  + (gameState.level - 1) * 0.3;
     const enemyPoints   = 10 + (gameState.level - 1) * 5;
     const shootCooldown = Math.random() * 2000 + 1000;
