@@ -118,8 +118,8 @@ export function enemyShoot(enemy, enemyBullets) {
     }
   
     // 按照既有邏輯計算其他屬性
-    const enemyHealth   = 20 + (gameState.level - 1) * 30;
-    const enemySpeed    = 2  + (gameState.level - 1) * 0.5;
+    const enemyHealth   = 20 + (gameState.level - 1) * 20;
+    const enemySpeed    = 2  + (gameState.level - 1) * 0.3;
     const enemyPoints   = 10 + (gameState.level - 1) * 5;
     const shootCooldown = Math.random() * 2000 + 1000;
     const shootInterval = Math.random() * 1500 + 1500 - (gameState.level - 1) * 300;
@@ -129,8 +129,8 @@ export function enemyShoot(enemy, enemyBullets) {
     if (now - gameState.lastAssaultTime >= 30000) {
       gameState.lastAssaultTime = now;
       // 增加隊員間隔
-      const spacingX = enemyWidth + 20;
-      const spacingY = enemyHeight + 20;
+      const spacingX = enemyWidth + 40;
+      const spacingY = enemyHeight + 40;
       // 以玩家 X 座標對準
       const centerX = gameState.playerX;
       // 倒三角形：3, 2, 1 排列
