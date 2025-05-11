@@ -37,7 +37,7 @@ export function spawnBoss(canvas, gameState, enemies) {
   const bossX = canvas.width/2 - bossW/2;
   const bossY = 20;
   // 依照現有等級計算基本血量，並 x5
-  const baseHp = 20 + (gameState.level - 1) * 10;
+  const baseHp = 20 + (gameState.level - 1) * 20;
   const bossHp  = baseHp * 5;
 
   enemies.push({
