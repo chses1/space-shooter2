@@ -1353,6 +1353,7 @@ function handleKeyDown(e) {
  * 開始三題數學挑戰
  */
 function startMathChallenge() {
+  gameState.hasAnswered = false; // 重置答題鎖，防止殘留
   // 隱藏「關卡完成」畫面，顯示題目畫面
   document.getElementById('levelCompleteScreen').classList.add('hidden');
   document.getElementById('questionScreen').classList.remove('hidden');
@@ -1376,6 +1377,7 @@ function askMathQuestion() {
   }
 
   gameState.challengeCurrentCount++;
+  gameState.hasAnswered = false; // 每題允許一次點擊
 
   // 從 unusedQuestions 隨機抽一題，不重複
   if (unusedQuestions.length === 0) {
@@ -1405,6 +1407,9 @@ function askMathQuestion() {
  * @param {number} selectedIndex 選項索引 (-1 為超時)
  */
 function handleChallengeAnswer(selectedIndex) {
+  // 防止快速連點重複提交
+  if (gameState.hasAnswered) return;
+  gameState.hasAnswered = true;
   clearInterval(timerInterval);
   const isCorrect = selectedIndex === currentQuestion.answer;
   if (isCorrect) {
@@ -1422,6 +1427,7 @@ function handleChallengeAnswer(selectedIndex) {
  * 三題結束後，依答對題數恢復血量，並保留升級畫面、強化攻擊力
  */
 function finishMathChallenge() {
+  clearInterval(timerInterval); // 清除倒數，避免殘留觸發
   // 0. 隱藏題目畫面
   document.getElementById('questionScreen').classList.add('hidden');
 
