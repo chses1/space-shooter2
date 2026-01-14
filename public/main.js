@@ -1,8 +1,13 @@
 // main.js 開頭
-// 如果前後端同部署在同一個域名，就留空；也可動態抓 window.location.origin
-const API_BASE = '';  
+// ✅ 自動判斷：本機開發用 localhost，部署到 GitHub Pages 就改打 Render 後端
+const API_BASE =
+  (location.hostname.endsWith('github.io'))
+    ? 'https://space-shooter2-mdyh.onrender.com'
+    : '';
+
 
 // 匯入 UI 與遊戲核心模組
+import localQuestions from './questions.js';
 import { updateStatusDisplay } from './ui.js';    // 更新狀態列顯示
 import { createPlayer, updatePlayer } from './player.js'; // 玩家邏輯：創建 & 更新
 import { spawnEnemy, updateEnemies, dropPowerup, BOSS_ENEMY_TYPE } from './enemy.js';  // 敵人生成 & 更新
@@ -18,13 +23,18 @@ let unusedQuestions = [];
 async function loadQuestions() {
   try {
     const res = await fetch(`${API_BASE}/api/questions`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     mathQuestions = await res.json();
     unusedQuestions = [...mathQuestions];
-    console.log(`✅ 已載入 ${mathQuestions.length} 筆題目`);
+    console.log(`✅ 已載入 ${mathQuestions.length} 筆題目（後端）`);
   } catch (err) {
-    console.error('載入題庫失敗:', err);
+    console.warn('⚠️ 載入題庫失敗，改用本地題庫：', err);
+    mathQuestions = localQuestions;
+    unusedQuestions = [...mathQuestions];
+    console.log(`✅ 已載入 ${mathQuestions.length} 筆題目（本地）`);
   }
 }
+
 loadQuestions();
 
 

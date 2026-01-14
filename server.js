@@ -12,7 +12,20 @@ const { Parser } = require('json2csv');
 
 // 1. 建立 app 實例，並先掛中間件
 const app = express();
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  'https://chses1.github.io/space-shooter2/',
+];
+
+app.use(cors({
+  origin: function (origin, cb) {
+    if (!origin) return cb(null, true); // Postman / server-to-server
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('CORS blocked: ' + origin));
+  }
+}));
+
 app.use(express.json());
 
 // 2. 載入 Mongoose model
@@ -23,11 +36,12 @@ const LeaderboardEntry = require('./models/LeaderboardEntry');
 // 3. 題庫管理 API
 app.get('/api/questions', async (req, res) => {
   try {
+    if (!dbReady) return res.json(defaultQuestions);
     const qs = await Question.find().select('-__v');
     return res.json(qs);
   } catch (err) {
     console.error('■■■ GET /api/questions 發生錯誤 ■■■', err);
-    return res.status(500).json({ message: '伺服器錯誤', detail: err.message });
+    return res.json(defaultQuestions);
   }
 });
 
@@ -197,29 +211,38 @@ app.delete('/api/leaderboard/:id', async (req, res) => {
   }
 });
 
-// 5. 靜態檔與前端 routing（放在最下面）
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).end();
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 // 6. 連上 MongoDB 並啟動
 const PORT      = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/spaceShooter';
+const MONGO_URI = process.env.MONGO_URI;
 
-mongoose.connect(MONGO_URI)
-  .then(async () => {
+let dbReady = false;
+
+// ✅ 先啟動 server（Render 才會判定服務存活）
+app.listen(PORT, () => {
+  console.log(`🚀 Server 跑在 port ${PORT}`);
+});
+
+// ✅ 再連 MongoDB（失敗也不要讓 server 掛掉）
+(async () => {
+  if (!MONGO_URI) {
+    console.error('❌ 缺少 MONGO_URI 環境變數，將以降級模式運行');
+    dbReady = false;
+    return;
+  }
+
+  try {
+    await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 8000 });
+    dbReady = true;
     console.log('✅ MongoDB 已連線');
 
-    // 如果題庫 collection 是空的，就插入 defaultQuestions 裡所有物件
     const count = await Question.countDocuments();
     if (count === 0) {
       console.info('題庫為空，開始自動匯入預設題庫...');
       await Question.insertMany(defaultQuestions);
       console.info(`已匯入 ${defaultQuestions.length} 筆預設題庫`);
     }
-
-    app.listen(PORT, () => console.log(`🚀 Server 跑在 http://localhost:${PORT}`));
-  })
-  .catch(err => console.error('❌ MongoDB 連線失敗：', err));
+  } catch (err) {
+    console.error('❌ MongoDB 連線失敗（降級模式）：', err.message);
+    dbReady = false;
+  }
+})();
