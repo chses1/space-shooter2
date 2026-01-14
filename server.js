@@ -15,8 +15,10 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
-  'https://chses1.github.io/space-shooter2/',
+  'https://chses1.github.io',               // ✅ GitHub Pages 正確 Origin（不含路徑）
+  'https://space-shooter2-mdyh.onrender.com' // （可選）如果你也會從 Render 頁面測試
 ];
+
 
 app.use(cors({
   origin: function (origin, cb) {
