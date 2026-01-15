@@ -30,13 +30,14 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅【新增】提供前端靜態檔案（index.html、main.js、enemy.js...）
-app.use(express.static(__dirname));
+// ✅ 提供前端靜態檔案：public 裡面的 index.html、main.js、enemy.js、boss.png...
+app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅【新增】首頁：打開 Render 網址時回傳 index.html
+// ✅ 首頁：打開 Render 網址時回傳 public/index.html
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
 
 
 // 2. 載入 Mongoose model
