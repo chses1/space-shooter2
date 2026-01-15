@@ -30,6 +30,15 @@ app.use(cors({
 
 app.use(express.json());
 
+// ✅【新增】提供前端靜態檔案（index.html、main.js、enemy.js...）
+app.use(express.static(__dirname));
+
+// ✅【新增】首頁：打開 Render 網址時回傳 index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+
 // 2. 載入 Mongoose model
 const defaultQuestions = require('./data/defaultQuestions');
 const Question       = require('./models/Question');
