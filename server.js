@@ -30,14 +30,13 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ 提供前端靜態檔案：public 裡面的 index.html、main.js、enemy.js、boss.png...
-app.use(express.static(path.join(__dirname, 'public')));
+// ✅【新增】提供前端靜態檔案（index.html、main.js、enemy.js...）
+app.use(express.static(__dirname));
 
-// ✅ 首頁：打開 Render 網址時回傳 public/index.html
+// ✅【新增】首頁：打開 Render 網址時回傳 index.html
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
-
 
 
 // 2. 載入 Mongoose model
@@ -94,6 +93,10 @@ app.delete('/api/questions/:id', async (req, res) => {
  * CSV 欄位：_id,question,options,answer
  */
 app.post('/api/questions/import', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: '沒有收到上傳檔案' });
+  }
+
   const rows = [];
   fs.createReadStream(req.file.path)
     .pipe(csv({ skipLines: 0, strict: true }))
@@ -102,14 +105,43 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
       fs.unlinkSync(req.file.path);
       try {
         for (const row of rows) {
-          const opts = row.options.split(';').map(s => s.trim());
-          const ans  = parseInt(row.answer, 10);
+          let opts = [];
+
+          if (row.options && row.options.trim()) {
+            opts = row.options.split(';').map(s => s.trim());
+          } else {
+            opts = [
+              row.option1?.trim() || '',
+              row.option2?.trim() || '',
+              row.option3?.trim() || '',
+              row.option4?.trim() || ''
+            ];
+          }
+
+          const ans = parseInt(row.answer, 10);
+
+          if (!row.question || opts.length !== 4 || opts.some(v => v === '') || Number.isNaN(ans)) {
+            throw new Error(`CSV 資料格式錯誤：${JSON.stringify(row)}`);
+          }
+
           if (row._id) {
-            await Question.findByIdAndUpdate(row._id, {
-              question: row.question,
-              options: opts,
-              answer: ans
-            });
+            const updated = await Question.findByIdAndUpdate(
+              row._id,
+              {
+                question: row.question,
+                options: opts,
+                answer: ans
+              },
+              { new: true }
+            );
+
+            if (!updated) {
+              await Question.create({
+                question: row.question,
+                options: opts,
+                answer: ans
+              });
+            }
           } else {
             await Question.create({
               question: row.question,
@@ -118,6 +150,7 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
             });
           }
         }
+
         res.json({ message: 'CSV 匯入完成', count: rows.length });
       } catch (err) {
         console.error('CSV 匯入失敗：', err);
@@ -125,6 +158,7 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
       }
     })
     .on('error', err => {
+      try { fs.unlinkSync(req.file.path); } catch {}
       console.error('CSV 解析錯誤：', err);
       res.status(400).json({ message: 'CSV 解析失敗', detail: err.message });
     });

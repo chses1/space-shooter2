@@ -1730,6 +1730,7 @@ async function renderAdminMenu() {
       tr.querySelector('.delete-btn').onclick = async () => {
         if (!confirm('確定要刪除這題嗎？')) return;
         await fetch(`${API_BASE}/api/questions/${q._id}`, { method: 'DELETE' });
+        await loadQuestions();
         renderAdminMenu(); // 刪除後重新載入
       };
       tbody.appendChild(tr);
@@ -1742,7 +1743,7 @@ async function renderAdminMenu() {
 async function renderEditQuestions() {
       const container = document.getElementById('adminContent');
       // 1. 從後端讀題庫
-      const res = await fetch('/api/questions');
+      const res = await fetch(`${API_BASE}/api/questions`);
       const qs  = await res.json();
     
       // 2. 產生表格
@@ -1779,11 +1780,12 @@ async function renderEditQuestions() {
             prompt('選項4：', old.options[3]),
           ];
           const ans   = Number(prompt('正確答案編號 (1-4)：', old.answer+1)) - 1;
-          await fetch(`/api/questions/${id}`, {
+          await fetch(`${API_BASE}/api/questions/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: newQ, options: opts, answer: ans })
           });
+          await loadQuestions();
           renderEditQuestions();
         })
       );
@@ -1793,7 +1795,8 @@ async function renderEditQuestions() {
         btn.addEventListener('click', async e => {
           if (!confirm('確定要刪除？')) return;
           const id = e.target.dataset.id;
-          await fetch(`/api/questions/${id}`, { method: 'DELETE' });
+          await fetch(`${API_BASE}/api/questions/${id}`, { method: 'DELETE' });
+          await loadQuestions();
           renderEditQuestions();
         })
       );
@@ -1809,11 +1812,12 @@ async function renderEditQuestions() {
             prompt('選項4：','')
           ];
           const answer   = Number(prompt('正確答案編號 (1-4)：')) - 1;
-          await fetch('/api/questions', {
+          await fetch(`${API_BASE}/api/questions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, options, answer })
           });
+          await loadQuestions();
           renderEditQuestions();
         });
     }
@@ -1963,9 +1967,13 @@ async function renderEditQuestions() {
             body: form
           })
           .then(res => res.json())
-          .then(data => {
+          .then(async data => {
+            if (!data || typeof data.count === 'undefined') {
+              throw new Error(data?.message || '伺服器沒有回傳 count');
+            }
             alert(`匯入完成：共 ${data.count} 題`);
-            renderAdminMenu();
+            await loadQuestions();
+            await renderAdminMenu();
           })
           .catch(err => {
             console.error('CSV 匯入錯誤：', err);
