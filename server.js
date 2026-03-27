@@ -1,277 +1,339 @@
-// server.js
-require('dotenv').config();
-const express  = require('express');
-const mongoose = require('mongoose');
-const cors     = require('cors');
-const path     = require('path');
-const multer = require('multer');
-const csv = require('csv-parser');
 const fs = require('fs');
-const upload = multer({ dest: 'uploads/' });
+const path = require('path');
+
+try {
+  require('dotenv').config();
+} catch (err) {
+  console.warn('⚠️ dotenv 載入失敗，略過 .env');
+}
+
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const multer = require('multer');
+const csvParser = require('csv-parser');
 const { Parser } = require('json2csv');
 
-// 1. 建立 app 實例，並先掛中間件
 const app = express();
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({ dest: uploadDir });
+
+const defaultQuestions = require('./defaultQuestions');
+const Question = require('./Question');
+const LeaderboardEntry = require('./LeaderboardEntry');
+
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI;
+
+let dbReady = false;
+let memoryQuestions = defaultQuestions.map((q, i) => ({
+  _id: `local-q-${i + 1}`,
+  question: q.question,
+  options: Array.isArray(q.options) ? q.options : [],
+  answer: q.answer
+}));
+let memoryLeaderboard = [];
+
 const allowedOrigins = [
+  'http://localhost:3000',
   'http://localhost:5500',
+  'http://127.0.0.1:3000',
   'http://127.0.0.1:5500',
-  'https://chses1.github.io',               // ✅ GitHub Pages 正確 Origin（不含路徑）
-  'https://space-shooter2-mdyh.onrender.com' // （可選）如果你也會從 Render 頁面測試
+  'https://chses1.github.io',
+  'https://space-shooter2-mdyh.onrender.com'
 ];
 
-
 app.use(cors({
-  origin: function (origin, cb) {
-    if (!origin) return cb(null, true); // Postman / server-to-server
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error('CORS blocked: ' + origin));
+    return cb(null, true);
   }
 }));
-
 app.use(express.json());
-
-// ✅【新增】提供前端靜態檔案（index.html、main.js、enemy.js...）
 app.use(express.static(__dirname));
 
-// ✅【新增】首頁：打開 Render 網址時回傳 index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+function normalizeQuestionInput(body) {
+  const question = String(body.question || '').trim();
+  const options = Array.isArray(body.options)
+    ? body.options.map(v => String(v ?? '').trim())
+    : [];
+  const answer = Number(body.answer);
 
-// 2. 載入 Mongoose model
-const defaultQuestions = require('./data/defaultQuestions');
-const Question       = require('./models/Question');
-const LeaderboardEntry = require('./models/LeaderboardEntry');
+  if (!question) throw new Error('題目不可空白');
+  if (options.length !== 4 || options.some(v => !v)) throw new Error('選項必須剛好 4 個且不可空白');
+  if (!Number.isInteger(answer) || answer < 0 || answer > 3) throw new Error('答案必須是 0 到 3');
 
-// 3. 題庫管理 API
+  return { question, options, answer };
+}
+
+function sortLeaderboard(list) {
+  return [...list].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.level !== a.level) return b.level - a.level;
+    return 0;
+  });
+}
+
 app.get('/api/questions', async (req, res) => {
   try {
-    if (!dbReady) return res.json(defaultQuestions);
-    const qs = await Question.find().select('-__v');
+    if (!dbReady) return res.json(memoryQuestions);
+    const qs = await Question.find().select('-__v').lean();
     return res.json(qs);
   } catch (err) {
-    console.error('■■■ GET /api/questions 發生錯誤 ■■■', err);
-    return res.json(defaultQuestions);
+    console.error('GET /api/questions 錯誤:', err);
+    return res.json(memoryQuestions);
   }
 });
 
 app.post('/api/questions', async (req, res) => {
   try {
-    const { question, options, answer } = req.body;
-    const q = await Question.create({ question, options, answer });
-    res.status(201).json(q);
+    const data = normalizeQuestionInput(req.body);
+    if (!dbReady) {
+      const created = { _id: `local-q-${Date.now()}`, ...data };
+      memoryQuestions.push(created);
+      return res.status(201).json(created);
+    }
+    const created = await Question.create(data);
+    return res.status(201).json(created);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '伺服器錯誤' });
-  }
-});
-app.put('/api/questions/:id', async (req, res) => {
-  try {
-    const updated = await Question.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!updated) return res.status(404).json({ message: '找不到該題目' });
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '伺服器錯誤' });
-  }
-});
-app.delete('/api/questions/:id', async (req, res) => {
-  try {
-    const deleted = await Question.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: '找不到該題目' });
-    res.json({ message: '已刪除題目' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '伺服器錯誤' });
+    console.error('POST /api/questions 錯誤:', err);
+    return res.status(400).json({ message: err.message || '新增題目失敗' });
   }
 });
 
-/**
- * CSV 批次匯入或更新題目
- * 前端上傳檔案欄位名稱：file
- * CSV 欄位：_id,question,options,answer
- */
-app.post('/api/questions/import', upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: '沒有收到上傳檔案' });
+app.put('/api/questions/:id', async (req, res) => {
+  try {
+    const data = normalizeQuestionInput(req.body);
+    if (!dbReady) {
+      const idx = memoryQuestions.findIndex(q => q._id === req.params.id);
+      if (idx === -1) return res.status(404).json({ message: '找不到該題目' });
+      memoryQuestions[idx] = { ...memoryQuestions[idx], ...data };
+      return res.json(memoryQuestions[idx]);
+    }
+    const updated = await Question.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true });
+    if (!updated) return res.status(404).json({ message: '找不到該題目' });
+    return res.json(updated);
+  } catch (err) {
+    console.error('PUT /api/questions/:id 錯誤:', err);
+    return res.status(400).json({ message: err.message || '更新題目失敗' });
   }
+});
+
+app.delete('/api/questions/:id', async (req, res) => {
+  try {
+    if (!dbReady) {
+      const before = memoryQuestions.length;
+      memoryQuestions = memoryQuestions.filter(q => q._id !== req.params.id);
+      if (memoryQuestions.length === before) return res.status(404).json({ message: '找不到該題目' });
+      return res.json({ message: '已刪除題目' });
+    }
+    const deleted = await Question.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: '找不到該題目' });
+    return res.json({ message: '已刪除題目' });
+  } catch (err) {
+    console.error('DELETE /api/questions/:id 錯誤:', err);
+    return res.status(500).json({ message: err.message || '刪除題目失敗' });
+  }
+});
+
+app.post('/api/questions/import', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: '沒有收到上傳檔案' });
 
   const rows = [];
   fs.createReadStream(req.file.path)
-    .pipe(csv({ skipLines: 0, strict: true }))
-    .on('data', data => rows.push(data))
+    .pipe(csvParser({ skipLines: 0 }))
+    .on('data', row => rows.push(row))
     .on('end', async () => {
-      fs.unlinkSync(req.file.path);
       try {
-        for (const row of rows) {
-          let opts = [];
+        fs.unlinkSync(req.file.path);
+      } catch {}
 
-          if (row.options && row.options.trim()) {
-            opts = row.options.split(';').map(s => s.trim());
-          } else {
-            opts = [
-              row.option1?.trim() || '',
-              row.option2?.trim() || '',
-              row.option3?.trim() || '',
-              row.option4?.trim() || ''
-            ];
+      try {
+        const parsedQuestions = rows.map((row, index) => {
+          const options = row.options && row.options.trim()
+            ? row.options.split(';').map(s => s.trim())
+            : [row.option1, row.option2, row.option3, row.option4].map(v => String(v || '').trim());
+          const answer = Number(row.answer);
+          const question = String(row.question || '').trim();
+          if (!question || options.length !== 4 || options.some(v => !v) || !Number.isInteger(answer) || answer < 0 || answer > 3) {
+            throw new Error(`第 ${index + 1} 筆 CSV 格式錯誤`);
           }
+          return { _id: row._id ? String(row._id).trim() : '', question, options, answer };
+        });
 
-          const ans = parseInt(row.answer, 10);
-
-          if (!row.question || opts.length !== 4 || opts.some(v => v === '') || Number.isNaN(ans)) {
-            throw new Error(`CSV 資料格式錯誤：${JSON.stringify(row)}`);
-          }
-
-          if (row._id) {
-            const updated = await Question.findByIdAndUpdate(
-              row._id,
-              {
-                question: row.question,
-                options: opts,
-                answer: ans
-              },
-              { new: true }
-            );
-
-            if (!updated) {
-              await Question.create({
-                question: row.question,
-                options: opts,
-                answer: ans
-              });
+        if (!dbReady) {
+          parsedQuestions.forEach(item => {
+            if (item._id) {
+              const idx = memoryQuestions.findIndex(q => q._id === item._id);
+              if (idx >= 0) memoryQuestions[idx] = { ...memoryQuestions[idx], ...item };
+              else memoryQuestions.push({ ...item, _id: `local-q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` });
+            } else {
+              memoryQuestions.push({ ...item, _id: `local-q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` });
             }
+          });
+          return res.json({ message: 'CSV 匯入完成（本機記憶體模式）', count: parsedQuestions.length });
+        }
+
+        for (const item of parsedQuestions) {
+          if (item._id && mongoose.Types.ObjectId.isValid(item._id)) {
+            const updated = await Question.findByIdAndUpdate(item._id, item, { new: true, runValidators: true });
+            if (!updated) await Question.create({ question: item.question, options: item.options, answer: item.answer });
           } else {
-            await Question.create({
-              question: row.question,
-              options: opts,
-              answer: ans
-            });
+            await Question.create({ question: item.question, options: item.options, answer: item.answer });
           }
         }
 
-        res.json({ message: 'CSV 匯入完成', count: rows.length });
+        return res.json({ message: 'CSV 匯入完成', count: parsedQuestions.length });
       } catch (err) {
-        console.error('CSV 匯入失敗：', err);
-        res.status(500).json({ message: 'CSV 匯入失敗', detail: err.message });
+        console.error('CSV 匯入失敗:', err);
+        return res.status(400).json({ message: 'CSV 匯入失敗', detail: err.message });
       }
     })
     .on('error', err => {
-      try { fs.unlinkSync(req.file.path); } catch {}
-      console.error('CSV 解析錯誤：', err);
-      res.status(400).json({ message: 'CSV 解析失敗', detail: err.message });
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {}
+      console.error('CSV 解析失敗:', err);
+      return res.status(400).json({ message: 'CSV 解析失敗', detail: err.message });
     });
 });
 
-/**
- * 匯出所有題庫為 CSV
- */
 app.get('/api/questions/export', async (req, res) => {
   try {
-    const questions = await Question.find().lean();
-    // 將選項拆成四個獨立欄位，方便編輯
-    const data = questions.map(q => {
-      const opts = q.options || [];
-      return {
-        _id:      q._id.toString(),
-        question: q.question,
-        option1:  opts[0] || '',
-        option2:  opts[1] || '',
-        option3:  opts[2] || '',
-        option4:  opts[3] || '',
-        answer:   q.answer
-      };
-    });
-    // 欄位順序：_id、題目、四個選項、答案
-    const fields = ['_id','question','option1','option2','option3','option4','answer'];
-    const parser = new Parser({ fields });
-    const csv    = parser.parse(data);
+    const source = dbReady
+      ? await Question.find().lean()
+      : memoryQuestions;
 
-    res.header('Content-Type', 'text/csv');
+    const data = source.map(q => ({
+      _id: String(q._id),
+      question: q.question,
+      option1: q.options?.[0] || '',
+      option2: q.options?.[1] || '',
+      option3: q.options?.[2] || '',
+      option4: q.options?.[3] || '',
+      answer: q.answer
+    }));
+
+    const parser = new Parser({ fields: ['_id', 'question', 'option1', 'option2', 'option3', 'option4', 'answer'] });
+    const csv = parser.parse(data);
+
+    res.header('Content-Type', 'text/csv; charset=utf-8');
     res.attachment('questions.csv');
-    res.send(csv);
+    return res.send(csv);
   } catch (err) {
-    console.error('匯出 CSV 失敗：', err);
-    res.status(500).json({ message: '匯出失敗', detail: err.message });
+    console.error('匯出 CSV 失敗:', err);
+    return res.status(500).json({ message: '匯出失敗', detail: err.message });
   }
 });
 
-// 4. 排行榜 API
 app.post('/api/leaderboard', async (req, res) => {
   try {
-    const { studentId, score, level } = req.body;
-    if (!studentId || score==null || level==null)
+    const studentId = String(req.body.studentId || '').trim();
+    const score = Number(req.body.score);
+    const level = Number(req.body.level);
+
+    if (!studentId || !Number.isFinite(score) || !Number.isFinite(level)) {
       return res.status(400).json({ message: '缺少 studentId、score 或 level' });
+    }
+
+    if (!dbReady) {
+      const exist = memoryLeaderboard.find(item => item.studentId === studentId);
+      if (exist) {
+        if (score > exist.score || (score === exist.score && level > exist.level)) {
+          exist.score = score;
+          exist.level = level;
+          exist.updatedAt = new Date().toISOString();
+        }
+        return res.json({ entry: exist });
+      }
+      const created = {
+        _id: `local-lb-${Date.now()}`,
+        studentId,
+        score,
+        level,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      memoryLeaderboard.push(created);
+      return res.status(201).json({ entry: created });
+    }
 
     const exist = await LeaderboardEntry.findOne({ studentId });
     if (exist) {
-      if (score > exist.score) {
-        exist.score = score; exist.level = level;
+      if (score > exist.score || (score === exist.score && level > exist.level)) {
+        exist.score = score;
+        exist.level = level;
         await exist.save();
       }
       return res.json({ entry: exist });
     }
-    const entry = await LeaderboardEntry.create({ studentId, score, level });
-    res.status(201).json({ entry });
+
+    const created = await LeaderboardEntry.create({ studentId, score, level });
+    return res.status(201).json({ entry: created });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '伺服器錯誤' });
+    console.error('POST /api/leaderboard 錯誤:', err);
+    return res.status(500).json({ message: '排行榜寫入失敗', detail: err.message });
   }
 });
+
 app.get('/api/leaderboard', async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
-    const list = await LeaderboardEntry.find()
-      .sort({ score: -1, updatedAt: 1 })
-      .limit(limit)
-      .select('-__v');
-    res.json(list);
+    const limit = Math.max(1, Number(req.query.limit) || 10);
+    if (!dbReady) {
+      return res.json(sortLeaderboard(memoryLeaderboard).slice(0, limit));
+    }
+    const list = await LeaderboardEntry.find().sort({ score: -1, level: -1, updatedAt: 1 }).limit(limit).select('-__v').lean();
+    return res.json(list);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '伺服器錯誤' });
+    console.error('GET /api/leaderboard 錯誤:', err);
+    return res.status(500).json({ message: '讀取排行榜失敗', detail: err.message });
   }
 });
+
 app.delete('/api/leaderboard', async (req, res) => {
   try {
+    if (!dbReady) {
+      memoryLeaderboard = [];
+      return res.json({ message: '✅ 已清除所有排行榜資料（本機記憶體模式）' });
+    }
     await LeaderboardEntry.deleteMany({});
-    res.json({ message: '✅ 已清除所有排行榜資料' });
+    return res.json({ message: '✅ 已清除所有排行榜資料' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: '伺服器錯誤' });
+    console.error('DELETE /api/leaderboard 錯誤:', err);
+    return res.status(500).json({ message: '清除排行榜失敗', detail: err.message });
   }
 });
 
-// 刪除單筆排行榜資料
 app.delete('/api/leaderboard/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const deleted = await LeaderboardEntry.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ message: '找不到該筆排行榜資料' });
+    if (!dbReady) {
+      const before = memoryLeaderboard.length;
+      memoryLeaderboard = memoryLeaderboard.filter(item => item._id !== req.params.id);
+      if (memoryLeaderboard.length === before) return res.status(404).json({ message: '找不到該筆排行榜資料' });
+      return res.sendStatus(204);
     }
+    const deleted = await LeaderboardEntry.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: '找不到該筆排行榜資料' });
     return res.sendStatus(204);
   } catch (err) {
-    console.error('刪除單筆排行榜失敗：', err);
-    return res.status(500).json({ message: '伺服器錯誤', detail: err.message });
+    console.error('DELETE /api/leaderboard/:id 錯誤:', err);
+    return res.status(500).json({ message: '刪除排行榜失敗', detail: err.message });
   }
 });
 
-// 6. 連上 MongoDB 並啟動
-const PORT      = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI;
-
-let dbReady = false;
-
-// ✅ 先啟動 server（Render 才會判定服務存活）
 app.listen(PORT, () => {
-  console.log(`🚀 Server 跑在 port ${PORT}`);
+  console.log(`🚀 Server 跑在 http://localhost:${PORT}`);
 });
 
-// ✅ 再連 MongoDB（失敗也不要讓 server 掛掉）
 (async () => {
   if (!MONGO_URI) {
-    console.error('❌ 缺少 MONGO_URI 環境變數，將以降級模式運行');
+    console.warn('⚠️ 未設定 MONGO_URI，改用本機記憶體模式執行');
     dbReady = false;
     return;
   }
@@ -283,12 +345,11 @@ app.listen(PORT, () => {
 
     const count = await Question.countDocuments();
     if (count === 0) {
-      console.info('題庫為空，開始自動匯入預設題庫...');
       await Question.insertMany(defaultQuestions);
-      console.info(`已匯入 ${defaultQuestions.length} 筆預設題庫`);
+      console.log(`✅ 已匯入 ${defaultQuestions.length} 筆預設題庫`);
     }
   } catch (err) {
-    console.error('❌ MongoDB 連線失敗（降級模式）：', err.message);
     dbReady = false;
+    console.error('❌ MongoDB 連線失敗，改用本機記憶體模式：', err.message);
   }
 })();
