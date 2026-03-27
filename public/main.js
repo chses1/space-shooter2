@@ -100,6 +100,10 @@ let joystickInput = { x: 0, y: 0 };
 // 排行榜提示計時器 ID（防止彈窗跳出兩次）
 let leaderboardTimeoutId = null;
 
+// 排行榜狀態
+let leaderboardData = [];
+let currentLeaderboardMode = 'class';
+
 // 玩家最後移動時間與閒置判斷
 let lastMoveTime = Date.now();
 const INACTIVITY_LIMIT = 3 * 60 * 1000; // 3分鐘毫秒
@@ -472,6 +476,119 @@ function applyPowerupEffect(type) {
 }
 
 
+function resetGameStateForMenu() {
+  gameState.level = 1;
+  gameState.score = 0;
+  gameState.health = 100;
+  gameState.maxHealth = 100;
+  gameState.attack = 10;
+  gameState.correctAnswers = 0;
+  gameState.totalQuestions = 0;
+  gameState.totalScoreForLevel = 0;
+  gameState.isPlaying = false;
+  gameState.specialAttackReady = true;
+  gameState.specialAttackCooldown = 0;
+  gameState.baseSpecialAttackRadius = 200;
+  gameState.specialAttackRadius = 200;
+  gameState.shield = 0;
+  gameState.shieldMax = 0;
+  gameState.bossSpawned = false;
+  gameState.challengeCorrectCount = 0;
+  gameState.challengeCurrentCount = 0;
+  gameState.hasAnswered = false;
+
+  enemies = [];
+  bullets = [];
+  enemyBullets = [];
+  powerups = [];
+
+  lastMoveTime = Date.now();
+  warningIssued = false;
+
+  const warnDiv = document.getElementById('inactivityWarning');
+  if (warnDiv) warnDiv.classList.add('hidden');
+}
+
+function getLeaderboardMeta(list, myId) {
+  const safeList = Array.isArray(list) ? list : [];
+  const myClassPrefix = (myId || '').slice(0, 3);
+  const classList = safeList.filter(e => String(e.studentId || '').startsWith(myClassPrefix));
+  const overallRank = safeList.findIndex(e => e.studentId === myId) + 1;
+  const classRank = classList.findIndex(e => e.studentId === myId) + 1;
+  return { myClassPrefix, classList, overallRank, classRank };
+}
+
+function renderLeaderboardTable(mode = currentLeaderboardMode) {
+  currentLeaderboardMode = mode;
+
+  const tbody = document.getElementById('leaderboardBody');
+  const summary = document.getElementById('leaderboardSummary');
+  const classBtn = document.getElementById('classLeaderboardBtn');
+  const allBtn = document.getElementById('allLeaderboardBtn');
+  if (!tbody || !summary) return;
+
+  const myId = gameState.studentId;
+  const { classList, overallRank, classRank } = getLeaderboardMeta(leaderboardData, myId);
+  const sourceList = mode === 'class' ? classList : leaderboardData;
+
+  classBtn?.classList.toggle('active', mode === 'class');
+  allBtn?.classList.toggle('active', mode === 'all');
+
+  summary.innerHTML = `
+    <div class="leaderboard-summary-card">
+      <div class="text-sm text-blue-200">你的本班名次</div>
+      <div class="text-2xl font-bold">${classRank > 0 ? `第 ${classRank} 名` : '未上榜'}</div>
+    </div>
+    <div class="leaderboard-summary-card">
+      <div class="text-sm text-blue-200">你的全部名次</div>
+      <div class="text-2xl font-bold">${overallRank > 0 ? `第 ${overallRank} 名` : '未上榜'}</div>
+    </div>
+    <div class="leaderboard-summary-card">
+      <div class="text-sm text-blue-200">目前顯示</div>
+      <div class="text-2xl font-bold">${mode === 'class' ? '本班排行' : '全部排行'}</div>
+    </div>
+  `;
+
+  tbody.innerHTML = '';
+
+  if (!sourceList.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="4">目前沒有排行榜資料</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  let myRow = null;
+  sourceList.forEach((entry, idx) => {
+    const tr = document.createElement('tr');
+    const isMe = entry.studentId === myId;
+    tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td>${entry.studentId}${isMe ? ' 🏆' : ''}</td>
+      <td>${entry.score}</td>
+      <td>${entry.level}</td>
+    `;
+    if (isMe) {
+      tr.classList.add('leaderboard-row-me');
+      myRow = tr;
+    }
+    tbody.appendChild(tr);
+  });
+
+  if (myRow) {
+    requestAnimationFrame(() => {
+      myRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+}
+
+function showLeaderboardScreen(mode = 'class') {
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('characterScreen').classList.add('hidden');
+  document.getElementById('leaderboardScreen').classList.remove('hidden');
+  renderLeaderboardTable(mode);
+}
+
 /**
  * 向後端上傳排行榜資料
  */
@@ -758,8 +875,10 @@ document.getElementById('teacherLoginBtn')
             quitBtn.addEventListener('click', async () => {
               gameState.isPlaying = false;
               cancelAnimationFrame(gameAnimationId);
+              document.getElementById('pauseBtn').classList.add('hidden');
+              document.getElementById('quitBtn').classList.add('hidden');
               await updateLeaderboard();
-              await loadLeaderboardAndHighlight();
+              await loadLeaderboardAndHighlight('class');
             });
 
             window.pauseBound = true; // 標記已經綁定過，避免重複綁定
@@ -1283,6 +1402,10 @@ function handleKeyDown(e) {
         startTimer();
       }
            
+      function checkAnswer(selectedIndex) {
+        handleChallengeAnswer(selectedIndex);
+      }
+
       // 啟動計時器
       function startTimer() {
         clearInterval(timerInterval);      // 先清掉舊的
@@ -1496,17 +1619,14 @@ function finishMathChallenge() {
       // 遊戲結束
       function gameOver() {
           gameState.isPlaying = false;
-          // 隱藏暫停與結束按鈕
           document.getElementById('pauseBtn').classList.add('hidden');
           document.getElementById('quitBtn').classList.add('hidden');
           cancelAnimationFrame(gameAnimationId);
 
-          // 不要單純只顯示 gameOver 畫面，改成：
           updateLeaderboard().then(() => {
-            loadLeaderboardAndHighlight();
+            loadLeaderboardAndHighlight('class');
           }).catch(err => {
             console.error('送分或載入排行榜失敗', err);
-            // 如果失敗，至少顯示遊戲結束畫面
             document.getElementById('finalScore').textContent = gameState.score;
             document.getElementById('finalLevel').textContent = gameState.level;
             document.getElementById('gameOverScreen').classList.remove('hidden');
@@ -1552,136 +1672,25 @@ function checkPowerupPickup() {
   });
 
 // 1. 取得排行榜並顯示
-async function loadLeaderboard() {
-    try {
-      // 向後端 GET 排行榜
-      const res = await fetch(`${API_BASE}/api/leaderboard?limit=500`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const list = await res.json();
-
-      // 清空舊資料
-      const tbody = document.getElementById('leaderboardBody');
-      tbody.innerHTML = '';
-
-      // 依序渲染每一筆
-      list.forEach((entry, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${idx + 1}</td>
-          <td>${entry.studentId}</td>
-          <td>${entry.score}</td>
-          <td>${entry.level}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-
-      // 切換畫面：隱藏遊戲結束頁、顯示排行榜頁
-      document.getElementById('gameOverScreen').classList.add('hidden');
-      document.getElementById('leaderboardScreen').classList.remove('hidden');
-    } catch (err) {
-      console.error('載入排行榜失敗', err);
-      alert('載入排行榜失敗：' + err.message);
-    }
-}
-
-// 進階排行榜載入並高亮自己，彈出班級/總排名
-async function loadLeaderboardAndHighlight() {
+async function loadLeaderboard(mode = 'all') {
   try {
     const res = await fetch(`${API_BASE}/api/leaderboard?limit=500`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const list = await res.json();
-    const tbody = document.getElementById('leaderboardBody');
-    tbody.innerHTML = '';
+    leaderboardData = await res.json();
+    showLeaderboardScreen(mode);
+  } catch (err) {
+    console.error('載入排行榜失敗', err);
+    alert('載入排行榜失敗：' + err.message);
+  }
+}
 
-    // 當前玩家的 studentId
-    const myId = gameState.studentId;
-    const myClassPrefix = myId.slice(0, 3);
-
-    // 先初始化 classList 並排序
-    const classList = list.filter(e => e.studentId.startsWith(myClassPrefix));
-    classList.sort((a, b) => b.score - a.score || b.level - a.level);
-
-    let classRank = 0;
-    let overallRank = 0;
-    let myRow = null;
-
-    list.forEach((entry, idx) => {
-      const tr = document.createElement('tr');
-      const isMe = entry.studentId === myId;
-
-      // 班級名次 (在 classList 裡找)
-      let classMedal = '';
-      const classRankIdx = classList.findIndex(c => c.studentId === entry.studentId);
-      if (classRankIdx === 0) classMedal = ' 🥇';
-      else if (classRankIdx === 1) classMedal = ' 🥈';
-      else if (classRankIdx === 2) classMedal = ' 🥉';
-
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${entry.studentId}${isMe ? ' 🏆' : ''}${classMedal}</td>
-        <td>${entry.score}</td>
-        <td>${entry.level}</td>
-      `;
-      if (isMe) {
-        tr.style.backgroundColor = 'rgba(255,255,0,0.5)'; // 黃色高亮
-        overallRank = idx + 1;
-        myRow = tr; // 記錄自己的那一列
-      }
-      tbody.appendChild(tr);
-    });
-
-    // 額外計算班級內排名
-    classList.forEach((entry, idx) => {
-      if (entry.studentId === myId) {
-        classRank = idx + 1;
-      }
-    });
-
-    // 先切換畫面：隱藏遊戲結束頁、顯示排行榜頁
-    document.getElementById('gameOverScreen').classList.add('hidden');
-    document.getElementById('leaderboardScreen').classList.remove('hidden');
-    // 允許排行榜可滾動並顯示返回主畫面按鈕
-    document.getElementById('leaderboardScreen').style.overflow = 'auto';
-    document.getElementById('backToMenuBtn').classList.remove('hidden');
-
-    // 顯示提示訊息，並儲存 setTimeout ID 方便後續清除
-    leaderboardTimeoutId = setTimeout(() => {
-      if (confirm(`你的班級排名：第 ${classRank} 名\n你的總排名：第 ${overallRank} 名\n\n按「好」回到主畫面，按「取消」留在排行榜`)) {
-        clearTimeout(leaderboardTimeoutId);
-        leaderboardTimeoutId = null;
-        // 重置主要遊戲狀態
-        gameState.level = 1;
-        gameState.score = 0;
-        gameState.health = 100;
-        gameState.maxHealth = 100;
-        gameState.attack = 10;
-        gameState.correctAnswers = 0;
-        gameState.totalQuestions = 0;
-        gameState.totalScoreForLevel = 0;
-        gameState.isPlaying = false;
-        gameState.specialAttackReady = true;
-        gameState.specialAttackCooldown = 0;
-        gameState.specialAttackRadius = 200;
-        gameState.shield = 0;
-        gameState.shieldMax = 0;
-        // 清空敵人、子彈、道具
-        enemies = [];
-        bullets = [];
-        enemyBullets = [];
-        powerups = [];
-        // 重置閒置計時器狀態
-        lastMoveTime = Date.now();
-        warningIssued = false;
-        document.getElementById('leaderboardScreen').classList.add('hidden');
-        document.getElementById('characterScreen').classList.remove('hidden');
-      } else {
-        // 留在排行榜：若找到自己的列則滾動到該列
-        if (myRow) {
-          document.getElementById('leaderboardScreen').style.overflow = 'auto';
-          myRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }
-    }, 200);
+// 進階排行榜載入並高亮自己，不再使用通知視窗
+async function loadLeaderboardAndHighlight(mode = 'class') {
+  try {
+    const res = await fetch(`${API_BASE}/api/leaderboard?limit=500`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    leaderboardData = await res.json();
+    showLeaderboardScreen(mode);
   } catch (err) {
     console.error('載入排行榜失敗', err);
     alert('載入排行榜失敗：' + err.message);
@@ -1694,13 +1703,26 @@ document.getElementById('continueBtn').addEventListener('click', startNextLevel)
   document.getElementById('leaderboardBtn')
     .addEventListener('click', loadLeaderboard);
   
-  // 3. 綁定「返回主選單」按鈕
+  // 3. 綁定排行榜切換與離開按鈕
   document.getElementById('backToMenuBtn')
     .addEventListener('click', () => {
       document.getElementById('leaderboardScreen').classList.add('hidden');
-      // 依你的需求，這裡可以返回到 characterScreen 或 loginScreen
+      resetGameStateForMenu();
       document.getElementById('characterScreen').classList.remove('hidden');
     });
+
+  document.getElementById('restartFromLeaderboardBtn')
+    .addEventListener('click', () => {
+      document.getElementById('leaderboardScreen').classList.add('hidden');
+      resetGameStateForMenu();
+      document.getElementById('characterScreen').classList.remove('hidden');
+    });
+
+  document.getElementById('classLeaderboardBtn')
+    .addEventListener('click', () => renderLeaderboardTable('class'));
+
+  document.getElementById('allLeaderboardBtn')
+    .addEventListener('click', () => renderLeaderboardTable('all'));
   
 async function renderAdminMenu() {
   const adminContent = document.getElementById('adminContent');

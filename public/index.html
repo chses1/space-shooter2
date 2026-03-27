@@ -416,6 +416,88 @@
         
         .leaderboard-table th {
             background-color: rgba(76, 81, 191, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            backdrop-filter: blur(6px);
+        }
+
+        .leaderboard-panel {
+            width: min(92vw, 980px);
+            height: min(72vh, 680px);
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid rgba(99, 102, 241, 0.55);
+            border-radius: 20px;
+            box-shadow: 0 0 24px rgba(99, 102, 241, 0.25);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .leaderboard-toolbar {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .leaderboard-toggle-btn {
+            min-width: 140px;
+            padding: 10px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(129, 140, 248, 0.65);
+            background: rgba(30, 41, 59, 0.9);
+            color: white;
+            font-family: 'Orbitron', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .leaderboard-toggle-btn.active {
+            background: linear-gradient(to right, #6366f1, #8b5cf6);
+            box-shadow: 0 0 18px rgba(129, 140, 248, 0.4);
+        }
+
+        .leaderboard-summary {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .leaderboard-summary-card {
+            min-width: 180px;
+            background: rgba(30, 41, 59, 0.75);
+            border: 1px solid rgba(96, 165, 250, 0.35);
+            border-radius: 14px;
+            padding: 10px 14px;
+            text-align: center;
+        }
+
+        .leaderboard-scroll {
+            flex: 1;
+            overflow-y: auto;
+            border-radius: 14px;
+            border: 1px solid rgba(76, 81, 191, 0.35);
+            padding: 0 6px 6px;
+            background: rgba(2, 6, 23, 0.35);
+        }
+
+        .leaderboard-row-me {
+            background: rgba(250, 204, 21, 0.28) !important;
+            box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.65);
+        }
+
+        .leaderboard-actions {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            position: sticky;
+            bottom: 0;
+            padding-top: 10px;
+            background: linear-gradient(to top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.65), transparent);
         }
         
         .damage-flash {
@@ -618,21 +700,31 @@
         </div>
         
         <div id="leaderboardScreen" class="screen hidden">
-            <h1 class="text-3xl font-bold mb-6 text-blue-500">太空數學英雄榜</h1>
-            <div class="w-full max-w-3xl px-4">
-                <table class="leaderboard-table">
-                    <thead>
-                        <tr>
-                            <th>排名</th>
-                            <th>班級座號</th>
-                            <th>分數</th>
-                            <th>等級</th>
-                        </tr>
-                    </thead>
-                    <tbody id="leaderboardBody"></tbody>
-                </table>
+            <h1 class="text-3xl font-bold mb-4 text-blue-500">太空數學英雄榜</h1>
+            <div class="leaderboard-panel">
+                <div id="leaderboardSummary" class="leaderboard-summary"></div>
+                <div class="leaderboard-toolbar">
+                    <button id="classLeaderboardBtn" class="leaderboard-toggle-btn active">本班排行</button>
+                    <button id="allLeaderboardBtn" class="leaderboard-toggle-btn">全部排行</button>
+                </div>
+                <div class="leaderboard-scroll">
+                    <table class="leaderboard-table">
+                        <thead>
+                            <tr>
+                                <th>排名</th>
+                                <th>班級座號</th>
+                                <th>分數</th>
+                                <th>等級</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody"></tbody>
+                    </table>
+                </div>
+                <div class="leaderboard-actions">
+                    <button id="restartFromLeaderboardBtn" class="btn">重新開始</button>
+                    <button id="backToMenuBtn" class="btn">結束</button>
+                </div>
             </div>
-            <button id="backToMenuBtn" class="btn mt-8">返回主選單</button>
         </div>
         
         <div id="levelCompleteScreen" class="screen hidden">
