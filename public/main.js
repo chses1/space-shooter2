@@ -1,9 +1,25 @@
 // main.js 開頭
-// ✅ 自動判斷：本機開發用 localhost，部署到 GitHub Pages 就改打 Render 後端
-const API_BASE =
-  (location.hostname.endsWith('github.io'))
-    ? 'https://space-shooter2-mdyh.onrender.com'
-    : '';
+// ✅ API 位址自動判斷
+// - GitHub Pages：改打 Render 後端
+// - 本機 Live Server(5500/5501...)：改打本機 Node 後端 3000
+// - 本機 Node 直接開 3000：使用同網域
+const API_BASE = (() => {
+  const host = location.hostname;
+  const port = location.port;
+
+  if (host.endsWith('github.io')) {
+    return 'https://space-shooter2-mdyh.onrender.com';
+  }
+
+  if (host === 'localhost' || host === '127.0.0.1') {
+    if (port && port !== '3000') {
+      return `${location.protocol}//${host}:3000`;
+    }
+    return '';
+  }
+
+  return '';
+})();
 
 
 // 匯入 UI 與遊戲核心模組

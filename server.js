@@ -14,17 +14,18 @@ const multer = require('multer');
 const csvParser = require('csv-parser');
 const { Parser } = require('json2csv');
 
+const defaultQuestions = require('./data/defaultQuestions');
+const Question = require('./models/Question');
+const LeaderboardEntry = require('./models/LeaderboardEntry');
+
 const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+const MONGO_URI = process.env.MONGO_URI || '';
+const PUBLIC_DIR = path.join(__dirname, 'public');
 const uploadDir = path.join(__dirname, 'uploads');
+
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir });
-
-const defaultQuestions = require('./defaultQuestions');
-const Question = require('./Question');
-const LeaderboardEntry = require('./LeaderboardEntry');
-
-const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI;
 
 let dbReady = false;
 let memoryQuestions = defaultQuestions.map((q, i) => ({
@@ -38,8 +39,10 @@ let memoryLeaderboard = [];
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5500',
+  'http://localhost:5501',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:5500',
+  'http://127.0.0.1:5501',
   'https://chses1.github.io',
   'https://space-shooter2-mdyh.onrender.com'
 ];
@@ -51,11 +54,16 @@ app.use(cors({
     return cb(null, true);
   }
 }));
-app.use(express.json());
-app.use(express.static(__dirname));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(PUBLIC_DIR));
+
+app.get('/health', (req, res) => {
+  res.json({ ok: true, dbReady, mode: dbReady ? 'mongodb' : 'memory' });
+});
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 function normalizeQuestionInput(body) {
@@ -156,39 +164,42 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
 
       try {
         const parsedQuestions = rows.map((row, index) => {
-          const options = row.options && row.options.trim()
-            ? row.options.split(';').map(s => s.trim())
-            : [row.option1, row.option2, row.option3, row.option4].map(v => String(v || '').trim());
-          const answer = Number(row.answer);
           const question = String(row.question || '').trim();
+          const option1 = String(row.option1 || '').trim();
+          const option2 = String(row.option2 || '').trim();
+          const option3 = String(row.option3 || '').trim();
+          const option4 = String(row.option4 || '').trim();
+
+          const options = row.options && String(row.options).trim()
+            ? String(row.options).split(';').map(s => s.trim())
+            : [option1, option2, option3, option4];
+
+          const answer = Number(row.answer);
+
           if (!question || options.length !== 4 || options.some(v => !v) || !Number.isInteger(answer) || answer < 0 || answer > 3) {
-            throw new Error(`第 ${index + 1} 筆 CSV 格式錯誤`);
+            throw new Error(`第 ${index + 1} 筆 CSV 格式錯誤，請確認 question / option1~4 / answer`);
           }
-          return { _id: row._id ? String(row._id).trim() : '', question, options, answer };
+
+          return {
+            _id: row._id ? String(row._id).trim() : '',
+            question,
+            options,
+            answer
+          };
         });
 
         if (!dbReady) {
-          parsedQuestions.forEach(item => {
-            if (item._id) {
-              const idx = memoryQuestions.findIndex(q => q._id === item._id);
-              if (idx >= 0) memoryQuestions[idx] = { ...memoryQuestions[idx], ...item };
-              else memoryQuestions.push({ ...item, _id: `local-q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` });
-            } else {
-              memoryQuestions.push({ ...item, _id: `local-q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` });
-            }
-          });
+          memoryQuestions = parsedQuestions.map((item, index) => ({
+            _id: item._id || `local-q-import-${Date.now()}-${index + 1}`,
+            question: item.question,
+            options: item.options,
+            answer: item.answer
+          }));
           return res.json({ message: 'CSV 匯入完成（本機記憶體模式）', count: parsedQuestions.length });
         }
 
-        for (const item of parsedQuestions) {
-          if (item._id && mongoose.Types.ObjectId.isValid(item._id)) {
-            const updated = await Question.findByIdAndUpdate(item._id, item, { new: true, runValidators: true });
-            if (!updated) await Question.create({ question: item.question, options: item.options, answer: item.answer });
-          } else {
-            await Question.create({ question: item.question, options: item.options, answer: item.answer });
-          }
-        }
-
+        await Question.deleteMany({});
+        await Question.insertMany(parsedQuestions.map(({ question, options, answer }) => ({ question, options, answer })));
         return res.json({ message: 'CSV 匯入完成', count: parsedQuestions.length });
       } catch (err) {
         console.error('CSV 匯入失敗:', err);
@@ -206,9 +217,7 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
 
 app.get('/api/questions/export', async (req, res) => {
   try {
-    const source = dbReady
-      ? await Question.find().lean()
-      : memoryQuestions;
+    const source = dbReady ? await Question.find().lean() : memoryQuestions;
 
     const data = source.map(q => ({
       _id: String(q._id),
@@ -225,7 +234,7 @@ app.get('/api/questions/export', async (req, res) => {
 
     res.header('Content-Type', 'text/csv; charset=utf-8');
     res.attachment('questions.csv');
-    return res.send(csv);
+    return res.send('\ufeff' + csv);
   } catch (err) {
     console.error('匯出 CSV 失敗:', err);
     return res.status(500).json({ message: '匯出失敗', detail: err.message });

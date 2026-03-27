@@ -1,19 +1,22 @@
 {
-  "name": "space-shooter-project",
-  "version": "1.0.0",
+  "name": "space-math-shooter",
+  "version": "1.0.1",
   "private": true,
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
     "dotenv": "^16.4.7",
-    "express": "^5.1.0",
-    "json2csv": "^6.0.0-alpha.2",
+    "express": "^4.21.2",
+    "json2csv": "^5.0.7",
     "mongoose": "^8.13.3",
-    "multer": "^2.0.2"
+    "multer": "^1.4.5-lts.1"
   }
 }
