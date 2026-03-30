@@ -1705,11 +1705,13 @@ document.getElementById('continueBtn').addEventListener('click', startNextLevel)
   
   // 3. 綁定排行榜切換與離開按鈕
   document.getElementById('backToMenuBtn')
-    .addEventListener('click', () => {
-      document.getElementById('leaderboardScreen').classList.add('hidden');
-      resetGameStateForMenu();
-      document.getElementById('characterScreen').classList.remove('hidden');
-    });
+  .addEventListener('click', () => {
+    document.getElementById('leaderboardScreen').classList.add('hidden');
+    document.getElementById('gameOverScreen').classList.add('hidden');
+    document.getElementById('characterScreen').classList.add('hidden');
+    resetGameStateForMenu();
+    document.getElementById('loginScreen').classList.remove('hidden');
+  });
 
   document.getElementById('restartFromLeaderboardBtn')
     .addEventListener('click', () => {
