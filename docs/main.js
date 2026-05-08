@@ -37,6 +37,7 @@ let mathQuestions = [];
 let unusedQuestions = [];
 let questionBanks = [];
 let currentAdminQuestionBankId = '';
+let questionBanksApiReady = true;
 
 function questionsUrl(bankId = '') {
   const params = bankId ? `?bankId=${encodeURIComponent(bankId)}` : '';
@@ -45,8 +46,21 @@ function questionsUrl(bankId = '') {
 
 async function loadQuestionBanks() {
   const res = await fetch(`${API_BASE}/api/question-banks`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  questionBanks = await res.json();
+  if (!res.ok) {
+    questionBanksApiReady = false;
+    const questionsRes = await fetch(questionsUrl());
+    const questions = questionsRes.ok ? await questionsRes.json() : [];
+    questionBanks = [{
+      _id: 'default',
+      bankId: '',
+      name: '預設題庫',
+      isActive: true,
+      count: questions.length
+    }];
+  } else {
+    questionBanksApiReady = true;
+    questionBanks = await res.json();
+  }
   const activeBank = questionBanks.find(bank => bank.isActive) || questionBanks[0];
   if (activeBank && (!currentAdminQuestionBankId || !questionBanks.some(bank => bank.bankId === currentAdminQuestionBankId))) {
     currentAdminQuestionBankId = activeBank.bankId;
@@ -1786,6 +1800,7 @@ async function renderEditQuestions() {
           <button id="createQuestionBankBtn" class="btn text-sm">新增題庫</button>
           <button id="activateQuestionBankBtn" class="btn text-sm">設為學生遊戲題庫</button>
         </div>
+        ${questionBanksApiReady ? '' : '<p class="text-yellow-300 mb-4">目前後端尚未支援多套題庫，先以原本的預設題庫開啟。請部署新版後端後再新增或切換題庫。</p>'}
         <button id="addQuestionBtn" class="btn mb-4">新增題目</button>
         <table class="leaderboard-table text-white">
           <thead><tr>
@@ -1815,6 +1830,9 @@ async function renderEditQuestions() {
 
       document.getElementById('createQuestionBankBtn')
         .addEventListener('click', async () => {
+          if (!questionBanksApiReady) {
+            return alert('目前後端尚未支援多套題庫，請先部署新版後端。');
+          }
           const name = prompt('新題庫名稱：');
           if (!name) return;
           const createRes = await fetch(`${API_BASE}/api/question-banks`, {
@@ -1830,6 +1848,9 @@ async function renderEditQuestions() {
 
       document.getElementById('activateQuestionBankBtn')
         .addEventListener('click', async () => {
+          if (!questionBanksApiReady) {
+            return alert('目前後端尚未支援多套題庫，請先部署新版後端。');
+          }
           const activeRes = await fetch(`${API_BASE}/api/question-banks/${encodeURIComponent(currentAdminQuestionBankId)}/active`, {
             method: 'PUT'
           });
