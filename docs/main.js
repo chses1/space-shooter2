@@ -2065,7 +2065,13 @@ async function renderEditQuestions() {
             method: 'POST',
             body: form
           })
-          .then(res => res.json())
+          .then(async res => {
+            const data = await res.json();
+            if (!res.ok) {
+              throw new Error(data?.detail || data?.message || `HTTP ${res.status}`);
+            }
+            return data;
+          })
           .then(async data => {
             if (!data || typeof data.count === 'undefined') {
               throw new Error(data?.message || '伺服器沒有回傳 count');

@@ -85,6 +85,19 @@ function normalizeQuestionInput(body) {
   return { question, options, answer };
 }
 
+function normalizeCsvAnswer(rawAnswer, options) {
+  const text = String(rawAnswer ?? '').trim();
+  const numericAnswer = Number(text);
+  if (Number.isInteger(numericAnswer) && numericAnswer >= 0 && numericAnswer <= 3) {
+    return numericAnswer;
+  }
+
+  const matchedIndex = options.findIndex(option => option === text);
+  if (matchedIndex >= 0) return matchedIndex;
+
+  throw new Error(`answer 必須是 0 到 3，或填入正確選項文字。目前收到：${text || '空白'}`);
+}
+
 function normalizeBankName(body) {
   const name = String(body.name || '').trim();
   if (!name) throw new Error('題庫名稱不可空白');
@@ -325,9 +338,9 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
             ? String(row.options).split(';').map(s => s.trim())
             : [option1, option2, option3, option4];
 
-          const answer = Number(row.answer);
+          const answer = normalizeCsvAnswer(row.answer, options);
 
-          if (!question || options.length !== 4 || options.some(v => !v) || !Number.isInteger(answer) || answer < 0 || answer > 3) {
+          if (!question || options.length !== 4 || options.some(v => !v)) {
             throw new Error(`第 ${index + 1} 筆 CSV 格式錯誤，請確認 question / option1~4 / answer`);
           }
 
