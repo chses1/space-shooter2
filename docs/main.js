@@ -76,8 +76,10 @@ async function initFirebaseLogin() {
 
     onAuthStateChanged(firebaseAuth, async user => {
       currentFirebaseUser = user;
+      updateLogoutButtons();
       if (!user) {
         currentUserProfile = null;
+        gameState.studentId = '';
         updateLoginStatus('請使用 Google 帳號登入');
         return;
       }
@@ -100,6 +102,52 @@ async function initFirebaseLogin() {
 function updateLoginStatus(text) {
   const el = document.getElementById('loginStatusText');
   if (el) el.textContent = text;
+}
+
+function updateLogoutButtons() {
+  const isLoggedIn = Boolean(currentFirebaseUser || firebaseAuth?.currentUser);
+  document.getElementById('logoutBtn')?.classList.toggle('hidden', !isLoggedIn);
+}
+
+function hideEntryScreens() {
+  document.getElementById('loginScreen')?.classList.add('hidden');
+  document.getElementById('studentIdScreen')?.classList.add('hidden');
+  document.getElementById('teacherLoginScreen')?.classList.add('hidden');
+  document.getElementById('adminPanelScreen')?.classList.add('hidden');
+  document.getElementById('characterScreen')?.classList.add('hidden');
+}
+
+function showLoginScreen() {
+  hideEntryScreens();
+  document.getElementById('loginScreen')?.classList.remove('hidden');
+  updateLogoutButtons();
+}
+
+function showStudentIdScreen() {
+  hideEntryScreens();
+  document.getElementById('studentIdScreen')?.classList.remove('hidden');
+  const input = document.getElementById('studentIdInput');
+  if (input) {
+    input.value = '';
+    input.focus();
+  }
+}
+
+function showCharacterScreen() {
+  hideEntryScreens();
+  document.getElementById('characterScreen')?.classList.remove('hidden');
+}
+
+async function handleLogout() {
+  try {
+    if (firebaseAuth) await signOut(firebaseAuth);
+  } finally {
+    currentFirebaseUser = null;
+    currentUserProfile = null;
+    gameState.studentId = '';
+    showLoginScreen();
+    updateLoginStatus('請使用 Google 帳號登入');
+  }
 }
 
 async function ensureFirebaseUser() {
@@ -157,9 +205,13 @@ function applyUserProfile(profile) {
     const input = document.getElementById('studentIdInput');
     if (input) input.value = profile.studentId;
     updateLoginStatus(`${profile.displayName || profile.email}，已綁定 ${profile.studentId}`);
+  } else if (profile?.isTeacher) {
+    gameState.studentId = '';
+    updateLoginStatus(`${profile.displayName || profile.email}，老師您好`);
   } else if (profile) {
-    updateLoginStatus(`${profile.displayName || profile.email}，第一次登入請填班級座號`);
+    updateLoginStatus(`${profile.displayName || profile.email}，請開始遊戲`);
   }
+  updateLogoutButtons();
 }
 
 function questionsUrl(bankId = '') {
@@ -667,7 +719,9 @@ function resetGameStateForMenu() {
 function getLeaderboardMeta(list, myId) {
   const safeList = Array.isArray(list) ? list : [];
   const myClassPrefix = (myId || '').slice(0, 3);
-  const classList = safeList.filter(e => String(e.studentId || '').startsWith(myClassPrefix));
+  const classList = myClassPrefix
+    ? safeList.filter(e => String(e.studentId || '').startsWith(myClassPrefix))
+    : [];
   const overallRank = safeList.findIndex(e => e.studentId === myId) + 1;
   const classRank = classList.findIndex(e => e.studentId === myId) + 1;
   return { myClassPrefix, classList, overallRank, classRank };
@@ -748,6 +802,10 @@ function showLeaderboardScreen(mode = 'class') {
  * 向後端上傳排行榜資料
  */
 async function updateLeaderboard() {
+  if (currentUserProfile?.isTeacher && !gameState.studentId) {
+    console.log('教師示範模式不送出排行榜');
+    return;
+  }
   try {
     await authFetch(`${API_BASE}/api/leaderboard`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -764,6 +822,9 @@ async function updateLeaderboard() {
 
     // 綁定登入按鈕
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
+    document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
+    document.getElementById('studentIdSubmitBtn')?.addEventListener('click', submitStudentId);
+    document.getElementById('studentIdLogoutBtn')?.addEventListener('click', handleLogout);
 
     // 綁定開始遊戲按鈕
     document.getElementById('startGameBtn').addEventListener('click', startGame);
@@ -792,9 +853,9 @@ async function updateLeaderboard() {
         document.getElementById('continueBtn')
           .addEventListener('click', startNextLevel);
 
-// 教師後台按鈕：顯示密碼輸入畫面
+// 教師後台按鈕：舊版首頁若仍有此按鈕，保留相容行為
 document.getElementById('teacherButton')
-  .addEventListener('click', () => {
+  ?.addEventListener('click', () => {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('teacherLoginScreen').classList.remove('hidden');
   });
@@ -864,28 +925,43 @@ document.getElementById('teacherLoginBtn')
       async function handleLogin() {
           try {
               await ensureFirebaseUser();
-              let profile = await fetchCurrentUserProfile();
+              const profile = await fetchCurrentUserProfile();
               applyUserProfile(profile);
 
+              if (profile.isTeacher) {
+                  document.getElementById('loginScreen').classList.add('hidden');
+                  document.getElementById('adminPanelScreen').classList.remove('hidden');
+                  renderAdminMenu();
+                  return;
+              }
+
               if (!profile.studentId) {
-                  const studentId = document.getElementById('studentIdInput').value.trim();
-                  if (studentId.length !== 5 || !/^\d+$/.test(studentId)) {
-                      alert('第一次登入請輸入5位數字的班級座號！');
-                      return;
-                  }
-                  const res = await authFetch(`${API_BASE}/api/auth/student-id`, {
-                      method: 'PUT',
-                      body: JSON.stringify({ studentId })
-                  });
-                  const data = await res.json();
-                  if (!res.ok) throw new Error(data.message || '綁定班級座號失敗');
-                  profile = data.user;
-                  applyUserProfile(profile);
+                  showStudentIdScreen();
+                  return;
               }
 
               gameState.studentId = profile.studentId;
-              document.getElementById('loginScreen').classList.add('hidden');
-              document.getElementById('characterScreen').classList.remove('hidden');
+              showCharacterScreen();
+          } catch (err) {
+              alert(getLoginErrorMessage(err));
+          }
+      }
+
+      async function submitStudentId() {
+          try {
+              const studentId = document.getElementById('studentIdInput').value.trim();
+              if (studentId.length !== 5 || !/^\d+$/.test(studentId)) {
+                  alert('第一次登入請輸入5位數字的班級座號！');
+                  return;
+              }
+              const res = await authFetch(`${API_BASE}/api/auth/student-id`, {
+                  method: 'PUT',
+                  body: JSON.stringify({ studentId })
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.message || '綁定班級座號失敗');
+              applyUserProfile(data.user);
+              showCharacterScreen();
           } catch (err) {
               alert(getLoginErrorMessage(err));
           }
@@ -1803,6 +1879,13 @@ function finishMathChallenge() {
           document.getElementById('quitBtn').classList.add('hidden');
           cancelAnimationFrame(gameAnimationId);
 
+          if (currentUserProfile?.isTeacher && !gameState.studentId) {
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('finalLevel').textContent = gameState.level;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+            return;
+          }
+
           updateLeaderboard().then(() => {
             loadLeaderboardAndHighlight('class');
           }).catch(err => {
@@ -2161,6 +2244,14 @@ async function renderEditQuestions() {
     .addEventListener('click', () => {
       document.getElementById('adminPanelScreen').classList.add('hidden');
       document.getElementById('loginScreen').classList.remove('hidden');
+      updateLogoutButtons();
+    });
+
+  document.getElementById('adminStartGameBtn')
+    ?.addEventListener('click', () => {
+      document.getElementById('adminPanelScreen').classList.add('hidden');
+      resetGameStateForMenu();
+      showCharacterScreen();
     });
 
   // **這裡新增**：綁定「觀看排行榜」

@@ -109,6 +109,48 @@
             transform: scale(1.05);
             box-shadow: 0 0 20px rgba(90, 103, 216, 0.8);
         }
+
+        .login-title {
+            color: #3b82f6;
+            font-size: clamp(40px, 8vw, 72px);
+            line-height: 1;
+            margin-bottom: 28px;
+            text-align: center;
+            text-shadow: 0 0 24px rgba(59, 130, 246, 0.55);
+        }
+
+        .login-status {
+            max-width: min(86vw, 620px);
+            color: #fff;
+            font-size: clamp(20px, 4vw, 32px);
+            line-height: 1.35;
+            margin-bottom: 24px;
+            text-align: center;
+            text-shadow: 0 0 18px rgba(0, 0, 0, 0.85);
+        }
+
+        .login-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .login-input {
+            width: min(86vw, 460px);
+            background: rgba(30, 41, 59, 0.88);
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            color: #fff;
+            font-size: clamp(22px, 4vw, 34px);
+            padding: 14px 18px;
+            text-align: center;
+            box-shadow: 0 0 18px rgba(59, 130, 246, 0.25);
+        }
+
+        .login-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
         
         .character {
             width: 80px;
@@ -618,14 +660,22 @@
         </div>
                
         <div id="loginScreen" class="screen login-bg">
-            <h1 class="text-4xl font-bold mb-8 text-center text-blue-500">戰數宇宙</h1>
-            <p id="loginStatusText" class="text-xl mb-4 text-center">請使用 Google 帳號登入</p>
-            <input type="text" id="studentIdInput" maxlength="5" placeholder="第一次登入請填班級座號" pattern="[0-9]{5}" inputmode="numeric" class="bg-gray-800 text-white border-2 border-blue-500 rounded-lg p-3 text-center text-xl w-64 mb-2">
-            <button id="loginBtn" class="btn text-base">使用 Google 登入</button>
-            <button id="teacherButton" class="btn mt-4 text-base bg-yellow-500 hover:bg-yellow-600">
-                教師後台
-              </button>
-          
+            <h1 class="login-title font-bold">戰數宇宙</h1>
+            <p id="loginStatusText" class="login-status hidden">請使用 Google 帳號登入</p>
+            <div class="login-actions">
+              <button id="loginBtn" class="btn text-base">使用 Google 登入</button>
+              <button id="logoutBtn" class="btn text-base hidden">登出</button>
+            </div>
+        </div>
+
+        <div id="studentIdScreen" class="screen login-bg hidden">
+            <h1 class="login-title font-bold">戰數宇宙</h1>
+            <p class="login-status">第一次登入請填班級座號</p>
+            <input type="text" id="studentIdInput" maxlength="5" placeholder="5 位數字" pattern="[0-9]{5}" inputmode="numeric" class="login-input mb-4">
+            <div class="login-actions">
+              <button id="studentIdSubmitBtn" class="btn text-base">開始選擇戰機</button>
+              <button id="studentIdLogoutBtn" class="btn text-base">登出</button>
+            </div>
         </div>
         
 <!-- 教師後台登入畫面 -->
@@ -645,6 +695,7 @@
       <button id="editQuestionsBtn" class="btn">編輯題庫</button>
       <button id="viewLeaderboardBtn" class="btn">觀看排行榜</button>
       <button id="clearLeaderboardBtn" class="btn">清除排行榜</button>
+      <button id="adminStartGameBtn" class="btn">進入遊戲示範</button>
       <button id="adminPanelBackBtn" class="btn">返回主畫面</button>
     </div>
     <div class="mb-4">
