@@ -111,6 +111,23 @@ async function ensureFirebaseUser() {
   return result.user;
 }
 
+function getLoginErrorMessage(err) {
+  const code = err?.code || '';
+  if (code === 'auth/operation-not-allowed') {
+    return 'Firebase 尚未啟用 Google 登入。請到 Firebase Authentication 的登入方式啟用 Google。';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return '這個網站網域尚未加入 Firebase 授權網域。請把目前網域加入 Authentication 的授權網域。';
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Google 登入視窗已關閉，請再試一次。';
+  }
+  if (code === 'auth/cancelled-popup-request') {
+    return '已有一個 Google 登入視窗開啟中，請完成目前的登入視窗。';
+  }
+  return err?.message || 'Google 登入失敗';
+}
+
 async function getAuthToken() {
   const user = await ensureFirebaseUser();
   return user.getIdToken();
@@ -805,7 +822,7 @@ document.getElementById('teacherLoginBtn')
         alert('這個 Google 帳號沒有教師後台權限');
       }
     } catch (err) {
-      alert(err.message || '教師登入失敗');
+      alert(getLoginErrorMessage(err));
     }
   });
 
@@ -870,7 +887,7 @@ document.getElementById('teacherLoginBtn')
               document.getElementById('loginScreen').classList.add('hidden');
               document.getElementById('characterScreen').classList.remove('hidden');
           } catch (err) {
-              alert(err.message || 'Google 登入失敗');
+              alert(getLoginErrorMessage(err));
           }
       }
       
