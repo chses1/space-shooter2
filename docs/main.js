@@ -1998,6 +1998,14 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function formatAdminUpdatedAt(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = number => String(number).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 async function renderAdminMenu() {
   return renderEditQuestions();
 }
@@ -2168,7 +2176,7 @@ async function renderEditQuestions() {
           </select>
         </div>
         <table class="leaderboard-table text-white">
-          <thead><tr><th>排名</th><th>座號</th><th>姓名</th><th>Email</th><th>分數</th><th>等級</th><th>更新時間</th><th>操作</th></tr></thead>
+          <thead><tr><th>排名</th><th>座號</th><th>姓名</th><th>分數</th><th>等級</th><th>更新時間</th><th>操作</th></tr></thead>
           <tbody id="adminLbBody"></tbody>
         </table>
       `;
@@ -2201,10 +2209,9 @@ async function renderEditQuestions() {
               <td>${i+1}</td>
               <td>${escapeHtml(e.studentId || '')}</td>
               <td>${escapeHtml(e.displayName || '')}</td>
-              <td>${escapeHtml(e.email || '')}</td>
               <td>${e.score}</td>
               <td>${e.level}</td>
-              <td>${e.updatedAt ? new Date(e.updatedAt).toLocaleString('zh-TW') : ''}</td>
+              <td>${formatAdminUpdatedAt(e.updatedAt)}</td>
               <td>
                 <button class="btn btn-sm delete-entry-btn" data-id="${e._id}" style="padding:4px 12px; font-size:14px;">刪除</button>
               </td>
