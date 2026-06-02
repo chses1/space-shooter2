@@ -13,22 +13,39 @@ const cors = require('cors');
 const multer = require('multer');
 const csvParser = require('csv-parser');
 const { Parser } = require('json2csv');
+const admin = require('firebase-admin');
 
 const defaultQuestions = require('./data/defaultQuestions');
 const Question = require('./models/Question');
 const QuestionBank = require('./models/QuestionBank');
 const LeaderboardEntry = require('./models/LeaderboardEntry');
+const User = require('./models/User');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const MONGO_URI = process.env.MONGO_URI || '';
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = fs.existsSync(path.join(__dirname, 'public'))
+  ? path.join(__dirname, 'public')
+  : path.join(__dirname, 'docs');
 const uploadDir = path.join(__dirname, 'uploads');
+const DEFAULT_TEACHER_EMAIL = 'cairo1680@apps.chses.tyc.edu.tw';
+const TEACHER_EMAILS = new Set(
+  [DEFAULT_TEACHER_EMAIL, ...(process.env.TEACHER_EMAILS || '').split(',')]
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+const FIREBASE_CLIENT_CONFIG = {
+  apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyBSisOANfkKW9AyCNGXX7zgzOKc1YjjziI',
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || 'space-shooter-eb3f8.firebaseapp.com',
+  projectId: process.env.FIREBASE_PROJECT_ID || 'space-shooter-eb3f8',
+  appId: process.env.FIREBASE_APP_ID || '1:657602014258:web:6a6c55bedcfd5b74d1602b'
+};
 
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir });
 
 let dbReady = false;
+let firebaseReady = false;
 let memoryQuestionBanks = [
   { _id: 'default', bankId: 'default', name: '預設題庫', isActive: true }
 ];
@@ -40,6 +57,26 @@ let memoryQuestions = defaultQuestions.map((q, i) => ({
   answer: q.answer
 }));
 let memoryLeaderboard = [];
+let memoryUsers = [];
+
+try {
+  if (admin.apps.length === 0) {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      admin.initializeApp({
+        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
+      });
+    } else if (process.env.FIREBASE_PROJECT_ID) {
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId: process.env.FIREBASE_PROJECT_ID
+      });
+    }
+  }
+  firebaseReady = admin.apps.length > 0;
+} catch (err) {
+  firebaseReady = false;
+  console.warn('⚠️ Firebase Admin 初始化失敗，Google 登入驗證暫不可用：', err.message);
+}
 
 const allowedOrigins = [
   'http://localhost:3000',
@@ -64,11 +101,48 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR));
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, dbReady, mode: dbReady ? 'mongodb' : 'memory' });
+  res.json({ ok: true, dbReady, firebaseReady, mode: dbReady ? 'mongodb' : 'memory' });
 });
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
+app.get('/api/firebase-config', (req, res) => {
+  res.json({
+    ...FIREBASE_CLIENT_CONFIG,
+    configured: Object.values(FIREBASE_CLIENT_CONFIG).every(Boolean)
+  });
+});
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.json({ user: publicUser(req.user) });
+});
+
+app.put('/api/auth/student-id', requireAuth, async (req, res) => {
+  try {
+    const studentId = normalizeStudentId(req.body.studentId);
+
+    if (!dbReady) {
+      const duplicate = memoryUsers.find(item => item.studentId === studentId && item.googleUid !== req.user.googleUid);
+      if (duplicate) return res.status(409).json({ message: '這個班級座號已經被其他 Google 帳號綁定' });
+      req.user.studentId = studentId;
+      return res.json({ user: publicUser(req.user) });
+    }
+
+    const duplicate = await User.findOne({ studentId, googleUid: { $ne: req.user.googleUid } }).lean();
+    if (duplicate) return res.status(409).json({ message: '這個班級座號已經被其他 Google 帳號綁定' });
+
+    const updated = await User.findOneAndUpdate(
+      { googleUid: req.user.googleUid },
+      { $set: { studentId } },
+      { new: true, runValidators: true }
+    ).lean();
+    return res.json({ user: publicUser(updated) });
+  } catch (err) {
+    console.error('PUT /api/auth/student-id 錯誤:', err);
+    return res.status(400).json({ message: err.message || '綁定班級座號失敗' });
+  }
 });
 
 function normalizeQuestionInput(body) {
@@ -146,11 +220,105 @@ function sortLeaderboard(list) {
   return [...list].sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     if (b.level !== a.level) return b.level - a.level;
+    const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    if (aTime !== bTime) return aTime - bTime;
     return 0;
   });
 }
 
-app.get('/api/question-banks', async (req, res) => {
+function isTeacherEmail(email) {
+  return TEACHER_EMAILS.has(String(email || '').trim().toLowerCase());
+}
+
+function normalizeStudentId(value) {
+  const studentId = String(value || '').trim();
+  if (!/^\d{5}$/.test(studentId)) throw new Error('班級座號必須是 5 位數字');
+  return studentId;
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  return {
+    googleUid: user.googleUid,
+    email: user.email,
+    displayName: user.displayName || '',
+    photoURL: user.photoURL || '',
+    studentId: user.studentId || '',
+    role: user.role || 'student',
+    isTeacher: isTeacherEmail(user.email)
+  };
+}
+
+function getBearerToken(req) {
+  const header = String(req.headers.authorization || '');
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : '';
+}
+
+async function syncUserFromToken(decoded) {
+  const email = String(decoded.email || '').trim().toLowerCase();
+  const data = {
+    googleUid: decoded.uid,
+    email,
+    displayName: decoded.name || decoded.displayName || '',
+    photoURL: decoded.picture || '',
+    role: isTeacherEmail(email) ? 'teacher' : 'student',
+    lastLoginAt: new Date()
+  };
+
+  if (!dbReady) {
+    let user = memoryUsers.find(item => item.googleUid === decoded.uid);
+    if (!user) {
+      user = { _id: `local-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...data, studentId: '' };
+      memoryUsers.push(user);
+    } else {
+      Object.assign(user, data);
+    }
+    return user;
+  }
+
+  return User.findOneAndUpdate(
+    { googleUid: decoded.uid },
+    { $set: data },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+}
+
+async function requireAuth(req, res, next) {
+  try {
+    if (!firebaseReady) {
+      return res.status(503).json({ message: 'Firebase Admin 尚未設定，無法驗證 Google 登入' });
+    }
+    const token = getBearerToken(req);
+    if (!token) return res.status(401).json({ message: '請先使用 Google 登入' });
+
+    const decoded = await admin.auth().verifyIdToken(token);
+    if (!decoded.email) return res.status(401).json({ message: 'Google 帳號缺少 email，無法登入' });
+    req.user = await syncUserFromToken(decoded);
+    req.firebaseUser = decoded;
+    return next();
+  } catch (err) {
+    console.error('驗證登入失敗:', err);
+    return res.status(401).json({ message: '登入驗證失敗，請重新登入' });
+  }
+}
+
+function requireTeacher(req, res, next) {
+  if (!req.user || !isTeacherEmail(req.user.email)) {
+    return res.status(403).json({ message: '此功能僅限老師帳號使用' });
+  }
+  return next();
+}
+
+async function requireAuthTeacher(req, res, next) {
+  return requireAuth(req, res, err => {
+    if (err) return next(err);
+    return requireTeacher(req, res, next);
+  });
+}
+
+app.get('/api/question-banks', requireAuthTeacher, async (req, res) => {
   try {
     if (!dbReady) {
       return res.json(memoryQuestionBanks.map(bank => ({
@@ -178,7 +346,7 @@ app.get('/api/question-banks', async (req, res) => {
   }
 });
 
-app.post('/api/question-banks', async (req, res) => {
+app.post('/api/question-banks', requireAuthTeacher, async (req, res) => {
   try {
     const name = normalizeBankName(req.body);
 
@@ -217,7 +385,7 @@ app.post('/api/question-banks', async (req, res) => {
   }
 });
 
-app.put('/api/question-banks/:bankId/active', async (req, res) => {
+app.put('/api/question-banks/:bankId/active', requireAuthTeacher, async (req, res) => {
   try {
     if (!dbReady) {
       const target = memoryQuestionBanks.find(bank => bank.bankId === req.params.bankId);
@@ -261,7 +429,7 @@ app.get('/api/questions', async (req, res) => {
   }
 });
 
-app.post('/api/questions', async (req, res) => {
+app.post('/api/questions', requireAuthTeacher, async (req, res) => {
   try {
     const data = normalizeQuestionInput(req.body);
     const bank = dbReady ? await getDbBankOrActive(req) : getMemoryBankOrActive(req);
@@ -278,7 +446,7 @@ app.post('/api/questions', async (req, res) => {
   }
 });
 
-app.put('/api/questions/:id', async (req, res) => {
+app.put('/api/questions/:id', requireAuthTeacher, async (req, res) => {
   try {
     const data = normalizeQuestionInput(req.body);
     if (!dbReady) {
@@ -296,7 +464,7 @@ app.put('/api/questions/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/questions/:id', async (req, res) => {
+app.delete('/api/questions/:id', requireAuthTeacher, async (req, res) => {
   try {
     if (!dbReady) {
       const before = memoryQuestions.length;
@@ -313,7 +481,7 @@ app.delete('/api/questions/:id', async (req, res) => {
   }
 });
 
-app.post('/api/questions/import', upload.single('file'), async (req, res) => {
+app.post('/api/questions/import', requireAuthTeacher, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: '沒有收到上傳檔案' });
 
   const rows = [];
@@ -386,7 +554,7 @@ app.post('/api/questions/import', upload.single('file'), async (req, res) => {
     });
 });
 
-app.get('/api/questions/export', async (req, res) => {
+app.get('/api/questions/export', requireAuthTeacher, async (req, res) => {
   try {
     const bank = dbReady ? await getDbBankOrActive(req) : getMemoryBankOrActive(req);
     const source = dbReady
@@ -415,28 +583,38 @@ app.get('/api/questions/export', async (req, res) => {
   }
 });
 
-app.post('/api/leaderboard', async (req, res) => {
+app.post('/api/leaderboard', requireAuth, async (req, res) => {
   try {
-    const studentId = String(req.body.studentId || '').trim();
+    const studentId = String(req.user.studentId || '').trim();
     const score = Number(req.body.score);
     const level = Number(req.body.level);
 
-    if (!studentId || !Number.isFinite(score) || !Number.isFinite(level)) {
-      return res.status(400).json({ message: '缺少 studentId、score 或 level' });
+    if (!studentId) {
+      return res.status(400).json({ message: '請先綁定班級座號' });
+    }
+    if (!Number.isFinite(score) || !Number.isFinite(level)) {
+      return res.status(400).json({ message: '缺少 score 或 level' });
     }
 
     if (!dbReady) {
-      const exist = memoryLeaderboard.find(item => item.studentId === studentId);
+      const exist = memoryLeaderboard.find(item => item.googleUid === req.user.googleUid);
       if (exist) {
         if (score > exist.score || (score === exist.score && level > exist.level)) {
           exist.score = score;
           exist.level = level;
+          exist.displayName = req.user.displayName || '';
+          exist.email = req.user.email;
+          exist.studentId = studentId;
           exist.updatedAt = new Date().toISOString();
         }
         return res.json({ entry: exist });
       }
       const created = {
         _id: `local-lb-${Date.now()}`,
+        userId: req.user._id,
+        googleUid: req.user.googleUid,
+        email: req.user.email,
+        displayName: req.user.displayName || '',
         studentId,
         score,
         level,
@@ -447,17 +625,26 @@ app.post('/api/leaderboard', async (req, res) => {
       return res.status(201).json({ entry: created });
     }
 
-    const exist = await LeaderboardEntry.findOne({ studentId });
+    const entryData = {
+      userId: req.user._id,
+      googleUid: req.user.googleUid,
+      email: req.user.email,
+      displayName: req.user.displayName || '',
+      studentId
+    };
+
+    const exist = await LeaderboardEntry.findOne({ googleUid: req.user.googleUid });
     if (exist) {
+      Object.assign(exist, entryData);
       if (score > exist.score || (score === exist.score && level > exist.level)) {
         exist.score = score;
         exist.level = level;
-        await exist.save();
       }
+      await exist.save();
       return res.json({ entry: exist });
     }
 
-    const created = await LeaderboardEntry.create({ studentId, score, level });
+    const created = await LeaderboardEntry.create({ ...entryData, score, level });
     return res.status(201).json({ entry: created });
   } catch (err) {
     console.error('POST /api/leaderboard 錯誤:', err);
@@ -479,7 +666,7 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-app.delete('/api/leaderboard', async (req, res) => {
+app.delete('/api/leaderboard', requireAuthTeacher, async (req, res) => {
   try {
     if (!dbReady) {
       memoryLeaderboard = [];
@@ -493,7 +680,7 @@ app.delete('/api/leaderboard', async (req, res) => {
   }
 });
 
-app.delete('/api/leaderboard/:id', async (req, res) => {
+app.delete('/api/leaderboard/:id', requireAuthTeacher, async (req, res) => {
   try {
     if (!dbReady) {
       const before = memoryLeaderboard.length;

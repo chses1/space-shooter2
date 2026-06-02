@@ -1,4 +1,13 @@
 // main.js 開頭
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+
 // ✅ API 位址自動判斷
 // - GitHub Pages：改打 Render 後端
 // - 本機 Live Server(5500/5501...)：改打本機 Node 後端 3000
@@ -38,6 +47,103 @@ let unusedQuestions = [];
 let questionBanks = [];
 let currentAdminQuestionBankId = '';
 let questionBanksApiReady = true;
+let firebaseAuth = null;
+let googleProvider = null;
+let firebaseReady = false;
+let currentFirebaseUser = null;
+let currentUserProfile = null;
+
+async function initFirebaseLogin() {
+  try {
+    const res = await fetch(`${API_BASE}/api/firebase-config`);
+    const config = await res.json();
+    if (!res.ok || !config.configured) {
+      console.warn('Firebase 前端設定尚未完成');
+      updateLoginStatus('Google 登入尚未設定，請先完成 Firebase 環境變數');
+      return false;
+    }
+
+    const app = initializeApp({
+      apiKey: config.apiKey,
+      authDomain: config.authDomain,
+      projectId: config.projectId,
+      appId: config.appId
+    });
+    firebaseAuth = getAuth(app);
+    googleProvider = new GoogleAuthProvider();
+    googleProvider.setCustomParameters({ prompt: 'select_account' });
+    firebaseReady = true;
+
+    onAuthStateChanged(firebaseAuth, async user => {
+      currentFirebaseUser = user;
+      if (!user) {
+        currentUserProfile = null;
+        updateLoginStatus('請使用 Google 帳號登入');
+        return;
+      }
+      try {
+        currentUserProfile = await fetchCurrentUserProfile();
+        applyUserProfile(currentUserProfile);
+      } catch (err) {
+        console.warn('讀取登入資料失敗', err);
+      }
+    });
+
+    return true;
+  } catch (err) {
+    console.error('Firebase 初始化失敗', err);
+    updateLoginStatus('Google 登入初始化失敗，請稍後再試');
+    return false;
+  }
+}
+
+function updateLoginStatus(text) {
+  const el = document.getElementById('loginStatusText');
+  if (el) el.textContent = text;
+}
+
+async function ensureFirebaseUser() {
+  if (!firebaseReady || !firebaseAuth || !googleProvider) {
+    throw new Error('Google 登入尚未設定完成');
+  }
+  if (firebaseAuth.currentUser) return firebaseAuth.currentUser;
+  const result = await signInWithPopup(firebaseAuth, googleProvider);
+  return result.user;
+}
+
+async function getAuthToken() {
+  const user = await ensureFirebaseUser();
+  return user.getIdToken();
+}
+
+async function authFetch(url, options = {}) {
+  const token = await getAuthToken();
+  const headers = new Headers(options.headers || {});
+  headers.set('Authorization', `Bearer ${token}`);
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return fetch(url, { ...options, headers });
+}
+
+async function fetchCurrentUserProfile() {
+  const res = await authFetch(`${API_BASE}/api/auth/me`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '讀取登入資料失敗');
+  return data.user;
+}
+
+function applyUserProfile(profile) {
+  currentUserProfile = profile;
+  if (profile?.studentId) {
+    gameState.studentId = profile.studentId;
+    const input = document.getElementById('studentIdInput');
+    if (input) input.value = profile.studentId;
+    updateLoginStatus(`${profile.displayName || profile.email}，已綁定 ${profile.studentId}`);
+  } else if (profile) {
+    updateLoginStatus(`${profile.displayName || profile.email}，第一次登入請填班級座號`);
+  }
+}
 
 function questionsUrl(bankId = '') {
   const params = bankId ? `?bankId=${encodeURIComponent(bankId)}` : '';
@@ -45,7 +151,7 @@ function questionsUrl(bankId = '') {
 }
 
 async function loadQuestionBanks() {
-  const res = await fetch(`${API_BASE}/api/question-banks`);
+  const res = await authFetch(`${API_BASE}/api/question-banks`);
   if (!res.ok) {
     questionBanksApiReady = false;
     const questionsRes = await fetch(questionsUrl());
@@ -626,10 +732,9 @@ function showLeaderboardScreen(mode = 'class') {
  */
 async function updateLeaderboard() {
   try {
-    await fetch(`${API_BASE}/api/leaderboard`, {
+    await authFetch(`${API_BASE}/api/leaderboard`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        studentId: gameState.studentId,
         score: gameState.score,
         level: gameState.level
       })
@@ -664,6 +769,7 @@ async function updateLeaderboard() {
       // DOM 載入完成後初始化遊戲
       document.addEventListener('DOMContentLoaded', () => {
         initGame();
+        initFirebaseLogin();
         document.getElementById('enterStationBtn')
           .addEventListener('click', startMathChallenge);
         document.getElementById('continueBtn')
@@ -685,15 +791,21 @@ document.getElementById('teacherLoginBackBtn')
 
 // 密碼驗證
 document.getElementById('teacherLoginBtn')
-  .addEventListener('click', () => {
-    const pw = document.getElementById('teacherPasswordInput').value;
-    const correctPw = '1070'; // ← 可改成環境變數或更安全機制
-    if (pw === correctPw) {
+  .addEventListener('click', async () => {
+    try {
+      await ensureFirebaseUser();
+      const profile = await fetchCurrentUserProfile();
+      applyUserProfile(profile);
+      if (profile?.isTeacher) {
       document.getElementById('teacherLoginScreen').classList.add('hidden');
       document.getElementById('adminPanelScreen').classList.remove('hidden');
       renderAdminMenu();
     } else {
-      alert('密碼錯誤！');
+        await signOut(firebaseAuth);
+        alert('這個 Google 帳號沒有教師後台權限');
+      }
+    } catch (err) {
+      alert(err.message || '教師登入失敗');
     }
   });
 
@@ -732,14 +844,33 @@ document.getElementById('teacherLoginBtn')
       }
       
       // 處理登入
-      function handleLogin() {
-          const studentId = document.getElementById('studentIdInput').value;
-          if (studentId.length === 5 && /^\d+$/.test(studentId)) {
-              gameState.studentId = studentId;
+      async function handleLogin() {
+          try {
+              await ensureFirebaseUser();
+              let profile = await fetchCurrentUserProfile();
+              applyUserProfile(profile);
+
+              if (!profile.studentId) {
+                  const studentId = document.getElementById('studentIdInput').value.trim();
+                  if (studentId.length !== 5 || !/^\d+$/.test(studentId)) {
+                      alert('第一次登入請輸入5位數字的班級座號！');
+                      return;
+                  }
+                  const res = await authFetch(`${API_BASE}/api/auth/student-id`, {
+                      method: 'PUT',
+                      body: JSON.stringify({ studentId })
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.message || '綁定班級座號失敗');
+                  profile = data.user;
+                  applyUserProfile(profile);
+              }
+
+              gameState.studentId = profile.studentId;
               document.getElementById('loginScreen').classList.add('hidden');
               document.getElementById('characterScreen').classList.remove('hidden');
-          } else {
-              alert('請輸入5位數字的班級座號！');
+          } catch (err) {
+              alert(err.message || 'Google 登入失敗');
           }
       }
       
@@ -1835,7 +1966,7 @@ async function renderEditQuestions() {
           }
           const name = prompt('新題庫名稱：');
           if (!name) return;
-          const createRes = await fetch(`${API_BASE}/api/question-banks`, {
+          const createRes = await authFetch(`${API_BASE}/api/question-banks`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name })
@@ -1851,7 +1982,7 @@ async function renderEditQuestions() {
           if (!questionBanksApiReady) {
             return alert('目前後端尚未支援多套題庫，請先部署新版後端。');
           }
-          const activeRes = await fetch(`${API_BASE}/api/question-banks/${encodeURIComponent(currentAdminQuestionBankId)}/active`, {
+          const activeRes = await authFetch(`${API_BASE}/api/question-banks/${encodeURIComponent(currentAdminQuestionBankId)}/active`, {
             method: 'PUT'
           });
           const data = await activeRes.json();
@@ -1874,7 +2005,7 @@ async function renderEditQuestions() {
             prompt('選項4：', old.options[3]),
           ];
           const ans   = Number(prompt('正確答案編號 (1-4)：', old.answer+1)) - 1;
-          await fetch(`${API_BASE}/api/questions/${id}`, {
+          await authFetch(`${API_BASE}/api/questions/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: newQ, options: opts, answer: ans })
@@ -1889,7 +2020,7 @@ async function renderEditQuestions() {
         btn.addEventListener('click', async e => {
           if (!confirm('確定要刪除？')) return;
           const id = e.target.dataset.id;
-          await fetch(`${API_BASE}/api/questions/${id}`, { method: 'DELETE' });
+          await authFetch(`${API_BASE}/api/questions/${id}`, { method: 'DELETE' });
           await loadQuestions();
           renderEditQuestions();
         })
@@ -1907,7 +2038,7 @@ async function renderEditQuestions() {
             prompt('選項4：','')
           ];
           const answer   = Number(prompt('正確答案編號 (1-4)：')) - 1;
-          const addRes = await fetch(questionsUrl(currentAdminQuestionBankId), {
+          const addRes = await authFetch(questionsUrl(currentAdminQuestionBankId), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, options, answer, bankId: currentAdminQuestionBankId })
@@ -1937,7 +2068,7 @@ async function renderEditQuestions() {
           </select>
         </div>
         <table class="leaderboard-table text-white">
-          <thead><tr><th>排名</th><th>座號</th><th>分數</th><th>等級</th><th>操作</th></tr></thead>
+          <thead><tr><th>排名</th><th>座號</th><th>姓名</th><th>Email</th><th>分數</th><th>等級</th><th>更新時間</th><th>操作</th></tr></thead>
           <tbody id="adminLbBody"></tbody>
         </table>
       `;
@@ -1968,9 +2099,12 @@ async function renderEditQuestions() {
             if (i < 10) tr.classList.add('top10');
             tr.innerHTML = `
               <td>${i+1}</td>
-              <td>${e.studentId}</td>
+              <td>${escapeHtml(e.studentId || '')}</td>
+              <td>${escapeHtml(e.displayName || '')}</td>
+              <td>${escapeHtml(e.email || '')}</td>
               <td>${e.score}</td>
               <td>${e.level}</td>
+              <td>${e.updatedAt ? new Date(e.updatedAt).toLocaleString('zh-TW') : ''}</td>
               <td>
                 <button class="btn btn-sm delete-entry-btn" data-id="${e._id}" style="padding:4px 12px; font-size:14px;">刪除</button>
               </td>
@@ -1996,7 +2130,7 @@ async function renderEditQuestions() {
     .addEventListener('click', async () => {
       if (!confirm('確定要清除所有排行榜資料？')) return;
       try {
-        const res = await fetch(`${API_BASE}/api/leaderboard`, { method: 'DELETE' });
+        const res = await authFetch(`${API_BASE}/api/leaderboard`, { method: 'DELETE' });
         const data = await res.json();
         alert(data.message);
         renderAdminLeaderboard();
@@ -2027,7 +2161,7 @@ async function renderEditQuestions() {
       }
       if (confirm('確定要刪除此名次條目嗎？')) {
         try {
-          const res = await fetch(`${API_BASE}/api/leaderboard/${entryId}`, { method: 'DELETE' });
+          const res = await authFetch(`${API_BASE}/api/leaderboard/${entryId}`, { method: 'DELETE' });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           renderAdminLeaderboard();
         } catch (err) {
@@ -2040,9 +2174,25 @@ async function renderEditQuestions() {
   // 綁定 CSV 匯出按鈕
   const csvExportBtn = document.getElementById('csvExportBtn');
   if (csvExportBtn) {
-    csvExportBtn.addEventListener('click', () => {
-      // 觸發下載匯出 CSV
-      window.location = `${API_BASE}/api/questions/export?bankId=${encodeURIComponent(currentAdminQuestionBankId)}`;
+    csvExportBtn.addEventListener('click', async () => {
+      try {
+        const res = await authFetch(`${API_BASE}/api/questions/export?bankId=${encodeURIComponent(currentAdminQuestionBankId)}`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || '匯出失敗');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'questions.csv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(err.message || '匯出失敗');
+      }
     });
   }
   // 綁定 CSV 匯入按鈕
@@ -2061,7 +2211,7 @@ async function renderEditQuestions() {
         complete: () => {
           const form = new FormData();
           form.append('file', file);
-          fetch(`${API_BASE}/api/questions/import?bankId=${encodeURIComponent(currentAdminQuestionBankId)}`, {
+          authFetch(`${API_BASE}/api/questions/import?bankId=${encodeURIComponent(currentAdminQuestionBankId)}`, {
             method: 'POST',
             body: form
           })

@@ -619,9 +619,9 @@
                
         <div id="loginScreen" class="screen login-bg">
             <h1 class="text-4xl font-bold mb-8 text-center text-blue-500">戰數宇宙</h1>
-            <p class="text-xl mb-6">請輸入你的班級座號 (5位數字)</p>
-            <input type="text" id="studentIdInput" maxlength="5" placeholder="例如:30101" pattern="[0-9]{5}" inputmode="numeric" class="bg-gray-800 text-white border-2 border-blue-500 rounded-lg p-3 text-center text-xl w-48">
-            <button id="loginBtn" class="btn text-base">開始遊戲</button>
+            <p id="loginStatusText" class="text-xl mb-4 text-center">請使用 Google 帳號登入</p>
+            <input type="text" id="studentIdInput" maxlength="5" placeholder="第一次登入請填班級座號" pattern="[0-9]{5}" inputmode="numeric" class="bg-gray-800 text-white border-2 border-blue-500 rounded-lg p-3 text-center text-xl w-64 mb-2">
+            <button id="loginBtn" class="btn text-base">使用 Google 登入</button>
             <button id="teacherButton" class="btn mt-4 text-base bg-yellow-500 hover:bg-yellow-600">
                 教師後台
               </button>
@@ -631,11 +631,9 @@
 <!-- 教師後台登入畫面 -->
 <div id="teacherLoginScreen" class="screen hidden">
     <h1 class="text-3xl font-bold mb-4 text-yellow-400">教師後台登入</h1>
-    <p class="mb-4">請輸入四位數密碼：</p>
-    <input type="password" id="teacherPasswordInput" maxlength="4" pattern="\d{4}"
-           class="bg-gray-800 text-white border-2 border-yellow-400 rounded-lg p-3 text-center text-xl mb-4" />
+    <p class="mb-4 text-center">請使用老師 Google 帳號登入</p>
     <div>
-      <button id="teacherLoginBtn" class="btn mr-4">登入後台</button>
+      <button id="teacherLoginBtn" class="btn mr-4">使用 Google 登入</button>
       <button id="teacherLoginBackBtn" class="btn">返回</button>
     </div>
   </div>
